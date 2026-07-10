@@ -1,0 +1,3835 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280">
+<title>シフト作成</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+    background: #F5F6F8;
+    color: #1F2937;
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  input, select { font-family: inherit; }
+
+  /* Header */
+  .header {
+    background: #FFFFFF;
+    border-bottom: 1px solid #E5E7EB;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .header-left { display: flex; align-items: center; gap: 20px; }
+  .logo { font-size: 16px; font-weight: 700; color: #111827; }
+  .month-nav { display: flex; align-items: center; gap: 8px; }
+  .month-nav button {
+    background: #FFFFFF; border: 1px solid #D1D5DB;
+    width: 28px; height: 28px; border-radius: 4px;
+    color: #6B7280; font-size: 14px;
+  }
+  .month-label {
+    font-size: 15px; font-weight: 600; color: #111827;
+    min-width: 110px; text-align: center;
+  }
+  .header-actions { display: flex; gap: 8px; }
+  .btn {
+    padding: 7px 14px; border-radius: 4px;
+    font-size: 13px; font-weight: 500;
+    border: 1px solid transparent;
+  }
+  .btn-primary { background: #2563EB; color: #FFF; }
+  .btn-primary:hover { background: #1D4ED8; }
+  .btn-secondary { background: #FFF; border-color: #D1D5DB; color: #374151; }
+  .btn-secondary:hover { background: #F9FAFB; }
+  .btn-danger { background: #DC2626; color: #FFF; }
+  .btn-danger:hover { background: #B91C1C; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Layout */
+  .main {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    height: calc(100vh - 57px);
+  }
+
+  /* Sidebar */
+  .sidebar {
+    background: #FFFFFF;
+    border-right: 1px solid #E5E7EB;
+    overflow-y: auto;
+    padding: 16px;
+  }
+  .section { margin-bottom: 20px; }
+  .section-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px;
+  }
+  .section-title {
+    font-size: 11px; font-weight: 700; color: #6B7280;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .add-btn {
+    background: none; border: none; color: #2563EB;
+    font-size: 18px; line-height: 1; padding: 0 4px;
+  }
+  .category-label {
+    font-size: 11px; font-weight: 700; color: #374151;
+    margin: 12px 0 6px; padding-bottom: 4px;
+    border-bottom: 1px solid #E5E7EB;
+  }
+  .category-label:first-child { margin-top: 0; }
+  .staff-card {
+    background: #F9FAFB; border: 1px solid #E5E7EB;
+    border-radius: 4px; padding: 8px 10px; margin-bottom: 6px;
+    cursor: pointer; position: relative;
+  }
+  .staff-card:hover { background: #F3F4F6; }
+  .staff-name {
+    font-weight: 600; font-size: 13px; color: #111827;
+    margin-bottom: 2px; display: flex; align-items: center; gap: 6px;
+  }
+  .group-tag {
+    font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 700;
+  }
+  .staff-meta { font-size: 11px; color: #6B7280; }
+  .group-card {
+    background: #F9FAFB; border: 1px solid #E5E7EB;
+    border-radius: 4px; padding: 8px 10px; margin-bottom: 6px;
+    cursor: pointer;
+  }
+  .group-card:hover { background: #F3F4F6; }
+  .group-name {
+    font-weight: 600; font-size: 12px; color: #111827;
+    margin-bottom: 4px; display: flex; align-items: center; gap: 6px;
+  }
+  .group-swatch {
+    width: 10px; height: 10px; border-radius: 2px; display: inline-block;
+  }
+  .group-members { font-size: 11px; color: #6B7280; }
+  .empty-msg { font-size: 12px; color: #9CA3AF; padding: 8px 0; font-style: italic; }
+
+  /* Main content */
+  .content { overflow: auto; padding: 20px 24px; }
+
+  .violations {
+    background: #FFFFFF;
+    border: 1px solid #FCA5A5;
+    border-left: 3px solid #DC2626;
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+  .violations.hidden { display: none; }
+  .violations-header {
+    font-size: 12px; font-weight: 700; color: #991B1B;
+    margin-bottom: 8px;
+  }
+  .violations-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 4px 16px;
+    font-size: 12px;
+    color: #7F1D1D;
+  }
+  .violation-item::before {
+    content: "・"; color: #DC2626; font-weight: 700; margin-right: 2px;
+  }
+
+  /* Calendar */
+  .calendar-wrap {
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 4px;
+    overflow: auto;
+    max-height: calc(100vh - 200px);
+  }
+  table.calendar { border-collapse: separate; border-spacing: 0; font-size: 11px; width: 100%; }
+  .calendar th, .calendar td {
+    border-right: 1px solid #E5E7EB;
+    border-bottom: 1px solid #E5E7EB;
+    padding: 0; text-align: center;
+    height: 32px; min-width: 34px; vertical-align: middle;
+  }
+  .calendar thead th {
+    background: #F9FAFB; font-weight: 600; color: #4B5563;
+    position: sticky; top: 0; z-index: 1;
+    border-top: 1px solid #E5E7EB;
+  }
+  .calendar .name-col {
+    text-align: left; padding: 0 8px;
+    background: #F9FAFB;
+    min-width: 100px; width: 100px;
+    font-weight: 600; color: #111827;
+    position: sticky; left: 0; z-index: 2;
+    border-left: 1px solid #E5E7EB;
+    white-space: nowrap;
+  }
+  .calendar thead .name-col { z-index: 3; }
+  .calendar .holiday-col {
+    background: #F9FAFB;
+    min-width: 62px; width: 62px;
+    font-weight: 700; color: #111827;
+    position: sticky; right: 0; z-index: 2;
+    border-right: 1px solid #E5E7EB;
+    border-left: 1px solid #E5E7EB;
+  }
+  .calendar thead .holiday-col { z-index: 3; }
+  .holiday-input {
+    width: 42px; padding: 2px 4px;
+    background: #FFF; border: 1px solid #D1D5DB;
+    border-radius: 3px; font-weight: 700; color: #111827;
+    text-align: center; font-size: 11px;
+  }
+  .holiday-display {
+    font-weight: 700; color: #111827; font-size: 11px;
+  }
+  .holiday-mismatch { color: #DC2626; }
+  .calendar .day-num { font-weight: 600; color: #111827; font-size: 11px; }
+  .calendar .day-sun { color: #DC2626; }
+  .calendar .day-sat { color: #2563EB; }
+  .req-row td { background: #FAFAFA; font-weight: 600; color: #6B7280; }
+  .req-row .name-col, .req-row .holiday-col {
+    font-size: 10px; color: #6B7280; font-weight: 600; background: #FAFAFA;
+  }
+  .req-input {
+    width: 28px; padding: 0; background: transparent; border: none;
+    text-align: center; font-weight: 600; color: #4B5563;
+    font-size: 11px;
+  }
+  .req-input:focus { background: #FFF; outline: 1px solid #2563EB; }
+  .req-cell-violation { background: #FEE2E2 !important; }
+
+  /* 社員必要人数行 */
+  .req-row-employee td {
+    background: #F5F3FF !important;
+    color: #5B21B6;
+    font-size: 10px;
+  }
+  .req-row-employee .name-col {
+    background: #F5F3FF !important;
+    color: #5B21B6;
+    font-size: 10px;
+  }
+  .req-row-employee .req-input { color: #5B21B6; }
+
+  /* 社員出勤数集計行 */
+  .summary-row-employee td {
+    background: #F0F9FF !important;
+    color: #075985;
+    font-size: 10px;
+  }
+  .summary-row-employee .name-col, .summary-row-employee .holiday-col {
+    background: #E0F2FE !important;
+    color: #075985;
+    font-size: 10px;
+  }
+
+  /* 社員出勤数集計行：ギリギリ最低ライン（実 = 必要数）強調 */
+  .summary-borderline {
+    background: #FEF3C7 !important;
+    color: #92400E !important;
+    font-weight: 700 !important;
+  }
+
+  /* 出勤数集計行 */
+  .summary-row td {
+    background: #F0FDF4;
+    font-weight: 700;
+    color: #065F46;
+    font-size: 11px;
+  }
+  .summary-row .name-col, .summary-row .holiday-col {
+    background: #DCFCE7;
+    color: #065F46;
+    font-size: 10px;
+  }
+  .summary-under {
+    background: #FEE2E2 !important;
+    color: #991B1B !important;
+  }
+
+  /* 週区切り（日曜の左に二重線） */
+  .calendar th.week-start,
+  .calendar td.week-start {
+    border-left: 3px double #6B7280;
+  }
+
+  /* 月休日数の規定値入力 */
+  .holiday-base-input {
+    width: 28px; padding: 0; background: transparent; border: none;
+    text-align: center; font-weight: 700; color: #111827;
+    font-size: 11px;
+  }
+  .holiday-base-input:focus { background: #FFF; outline: 1px solid #2563EB; }
+
+  /* Category divider rows */
+  .category-row td {
+    background: #1F2937 !important;
+    color: #FFFFFF;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 0.1em; text-align: left;
+    padding: 4px 12px !important; height: 22px;
+    position: sticky; left: 0;
+  }
+
+  /* Group row tints */
+  .row-tint-a > td { background-color: #FFFBEB; }
+  .row-tint-a > td.name-col, .row-tint-a > td.holiday-col { background-color: #FEF7E0; }
+  .row-tint-b > td { background-color: #F0FDF4; }
+  .row-tint-b > td.name-col, .row-tint-b > td.holiday-col { background-color: #E4F8EB; }
+  .row-tint-c > td { background-color: #EFF6FF; }
+  .row-tint-c > td.name-col, .row-tint-c > td.holiday-col { background-color: #DBEAFE; }
+  .row-tint-d > td { background-color: #FAF5FF; }
+  .row-tint-d > td.name-col, .row-tint-d > td.holiday-col { background-color: #EDE9FE; }
+
+  /* Shift cell types */
+  .cell {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; cursor: pointer;
+    user-select: none; -webkit-user-select: none;
+    position: relative;
+  }
+  .cell-selected::after {
+    content: ''; position: absolute; inset: 0;
+    box-shadow: inset 0 0 0 2px #2563EB;
+    background: rgba(37, 99, 235, 0.12);
+    pointer-events: none; z-index: 1;
+  }
+  .calendar td.has-selection { position: relative; }
+  .cell-work { background: #DBEAFE; color: #1E40AF; }
+  .cell-off { color: #D1D5DB; }
+  .cell-holiday { background: #FCE7F3; color: #BE185D; }
+  .cell-required { background: #2563EB; color: #FFFFFF; }
+  .cell-training { background: #FEF3C7; color: #92400E; }
+  .cell-paid { background: #E0E7FF; color: #4338CA; }
+  .cell-violation {
+    outline: 2px solid #DC2626; outline-offset: -2px;
+    z-index: 2; position: relative;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex; gap: 6px; flex-wrap: wrap;
+    padding: 12px 0 0; font-size: 11px; color: #4B5563;
+    align-items: center;
+  }
+  .legend-hint {
+    font-size: 11px; color: #6B7280; margin-right: 4px;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 9px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    font-size: 11px; color: #4B5563;
+    cursor: pointer;
+    user-select: none;
+    font-family: inherit;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .legend-item:hover { background: #F3F4F6; }
+  .legend-item.active {
+    background: #DBEAFE;
+    border-color: #2563EB;
+    color: #1E40AF;
+    font-weight: 700;
+    box-shadow: 0 1px 3px rgba(37,99,235,0.2);
+  }
+  .legend-item.legend-violation {
+    cursor: default;
+    background: transparent;
+  }
+  .legend-item.legend-violation:hover { background: transparent; }
+  .legend-swatch {
+    width: 14px; height: 14px; border-radius: 2px; border: 1px solid #E5E7EB;
+    flex-shrink: 0;
+  }
+
+  /* Mode indicator bar */
+  .mode-bar {
+    background: linear-gradient(to right, #FEF3C7, #FDE68A);
+    border: 1px solid #F59E0B;
+    border-radius: 4px;
+    padding: 8px 14px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: #78350F;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .mode-bar.hidden { display: none; }
+  .mode-bar-label { font-weight: 700; }
+  .mode-bar-hint { color: #92400E; font-size: 11px; flex: 1; }
+  .mode-bar-exit {
+    background: #FFF;
+    border: 1px solid #D97706;
+    color: #92400E;
+    padding: 3px 10px;
+    font-size: 11px;
+    border-radius: 3px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .mode-bar-exit:hover { background: #FEF3C7; }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .modal-backdrop.hidden { display: none; }
+  .modal {
+    background: #FFF; border-radius: 8px;
+    padding: 24px; min-width: 380px; max-width: 500px;
+    max-height: 90vh; overflow-y: auto;
+    box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+  }
+  .modal-title {
+    font-size: 16px; font-weight: 700; color: #111827;
+    margin-bottom: 16px;
+  }
+  .form-row { margin-bottom: 12px; }
+  .form-label {
+    display: block; font-size: 12px; font-weight: 600;
+    color: #374151; margin-bottom: 4px;
+  }
+  .form-input, .form-select {
+    width: 100%; padding: 7px 10px;
+    border: 1px solid #D1D5DB; border-radius: 4px;
+    font-size: 13px; color: #111827; background: #FFF;
+  }
+  .form-input:focus, .form-select:focus {
+    outline: 2px solid #2563EB; outline-offset: -2px; border-color: transparent;
+  }
+  .form-row-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .modal-actions {
+    display: flex; justify-content: space-between;
+    margin-top: 20px; gap: 8px;
+  }
+  .modal-actions-right { display: flex; gap: 8px; }
+  .checkbox-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 0; font-size: 13px;
+  }
+  .checkbox-row input { width: 16px; height: 16px; }
+
+  /* Cell type picker popover */
+  .cell-picker {
+    position: absolute; background: #FFF;
+    border: 1px solid #D1D5DB; border-radius: 4px;
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+    padding: 4px; z-index: 50;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .cell-picker-option {
+    padding: 6px 12px; cursor: pointer; font-size: 12px;
+    border-radius: 3px; text-align: left; min-width: 140px;
+    display: flex; align-items: center; gap: 8px;
+    border: none; background: transparent; color: #111827;
+  }
+  .cell-picker-option:hover { background: #F3F4F6; }
+  .cell-picker-swatch {
+    width: 14px; height: 14px; border-radius: 2px;
+    border: 1px solid #E5E7EB; flex-shrink: 0;
+  }
+
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: #111827; color: #FFF;
+    padding: 12px 18px; border-radius: 6px;
+    font-size: 13px; z-index: 200;
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2);
+    opacity: 0; transition: opacity 0.2s;
+  }
+  .toast.show { opacity: 1; }
+
+  /* 生成中ローディング */
+  .loading-overlay {
+    position: fixed; inset: 0;
+    background: rgba(17, 24, 39, 0.5);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 300;
+  }
+  .loading-overlay.hidden { display: none; }
+  .loading-card {
+    background: #FFF; border-radius: 8px;
+    padding: 28px 40px;
+    box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);
+    text-align: center; min-width: 280px;
+  }
+  .loading-spinner {
+    width: 40px; height: 40px;
+    border: 4px solid #E5E7EB;
+    border-top-color: #2563EB;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .loading-text {
+    font-size: 14px; font-weight: 600; color: #111827;
+    margin-bottom: 6px;
+  }
+  .loading-detail {
+    font-size: 12px; color: #6B7280;
+  }
+
+  .toolbar {
+    display: flex; gap: 8px; margin-bottom: 12px;
+    flex-wrap: wrap; align-items: center;
+  }
+  .toolbar-label {
+    font-size: 12px; color: #6B7280; font-weight: 600;
+    margin-right: 4px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="logo">シフト作成</div>
+    <div id="sync-status" style="font-size:11px;color:#6B7280;cursor:pointer;padding:3px 8px;border-radius:4px;border:1px solid transparent;" title="クリックで設定を開く"></div>
+    <div class="month-nav">
+      <button id="btn-prev-month">‹</button>
+      <div class="month-label" id="month-label">2026年6月</div>
+      <button id="btn-next-month">›</button>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-primary" id="btn-save" title="共有フォルダへ保存 (Ctrl+S)">保存<span id="save-badge" style="display:none;margin-left:4px;color:#FBBF24;">●</span></button>
+    <button class="btn btn-secondary" id="btn-settings" title="設定">⚙</button>
+    <button class="btn btn-secondary" id="btn-copy-prev">前月コピー</button>
+    <button class="btn btn-secondary" id="btn-export">Excel出力</button>
+    <button class="btn btn-primary" id="btn-generate">生成</button>
+  </div>
+</div>
+
+<div class="main">
+
+  <aside class="sidebar">
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">スタッフ <span id="staff-count"></span></div>
+        <button class="add-btn" id="btn-add-staff" title="スタッフ追加">＋</button>
+      </div>
+      <div id="staff-list"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">グループ</div>
+        <button class="add-btn" id="btn-add-group" title="グループ追加">＋</button>
+      </div>
+      <div id="group-list"></div>
+    </div>
+  </aside>
+
+  <main class="content">
+
+    <div class="toolbar">
+      <span class="toolbar-label">必要人数の一括設定:</span>
+      <input type="number" id="bulk-required" min="0" max="99" placeholder="人数" style="width:60px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:4px;font-size:12px;">
+      <button class="btn btn-secondary" id="btn-apply-bulk" style="padding:4px 10px;font-size:12px;">全日に適用</button>
+      <button class="btn btn-secondary" id="btn-apply-weekday" style="padding:4px 10px;font-size:12px;">平日のみ</button>
+      <button class="btn btn-secondary" id="btn-apply-weekend" style="padding:4px 10px;font-size:12px;">土日のみ</button>
+    </div>
+
+    <div class="mode-bar hidden" id="mode-bar"></div>
+
+    <div class="violations hidden" id="violations">
+      <div class="violations-header" id="violations-header">⚠ 違反 0件</div>
+      <div class="violations-list" id="violations-list"></div>
+    </div>
+
+    <div class="calendar-wrap" id="calendar-wrap">
+      <table class="calendar" id="calendar"></table>
+    </div>
+
+    <div class="legend" id="legend"></div>
+
+  </main>
+</div>
+
+<div class="modal-backdrop hidden" id="modal-backdrop">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="loading-overlay hidden" id="loading-overlay">
+  <div class="loading-card">
+    <div class="loading-spinner"></div>
+    <div class="loading-text" id="loading-text">シフト生成中…</div>
+    <div class="loading-detail" id="loading-detail"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================
+ * シフト作成アプリ - メインスクリプト
+ * ============================================ */
+
+/* ===== 状態管理 ===== */
+const STORAGE_KEY = 'shift_app_data_v1';
+const STORAGE_TEMPLATE_KEY = 'shift_app_template_v1';
+
+let state = {
+  staff: [],          // { id, name, category, startHour, endHour, startMin, endMin, groupId, holidayBase }
+  groups: [],         // { id, name, color }
+  currentMonth: null, // "YYYY-MM"
+  months: {},         // { "YYYY-MM": { requiredStaff: [...], paidLeaves: {}, shifts: {} } }
+  minEmployees: 0,    // 最低社員数（全日共通、グローバル設定）
+};
+
+let nextStaffId = 1;
+let nextGroupId = 1;
+
+/* ===== モード・選択状態（永続化対象外） ===== */
+let currentMode = null;          // null | '' | 'work' | 'off' | 'holiday' | 'required' | 'training' | 'paid'
+let selectedCells = new Set();   // "rowIndex_day"
+let isDragging = false;
+let dragStart = null;            // { row, day }
+let dragEnd = null;
+let orderedStaffCache = [];      // カレンダー描画順のスタッフ配列（rowIndex対応）
+
+const CATEGORIES = ['社員', 'パート・派遣', 'ICスタッフ'];
+const GROUP_COLORS = ['a', 'b', 'c', 'd']; // 最大4グループ
+
+/* ===== 永続化 =====
+ * 作業中: localStorage へ自動保存（軽い・このPC内）
+ * 共有フォルダ: ヘッダーの「保存」ボタン or Ctrl+S で手動保存のみ */
+let hasUnsavedChanges = false; // 共有フォルダにまだ書いていない変更があるか
+let lastSavedAt = null;        // 共有フォルダへの最終保存時刻
+
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      staff: state.staff,
+      groups: state.groups,
+      currentMonth: state.currentMonth,
+      months: state.months,
+      minEmployees: state.minEmployees,
+      nextStaffId: nextStaffId,
+      nextGroupId: nextGroupId,
+    }));
+  } catch (e) {
+    console.error('保存失敗:', e);
+    showToast('データ保存に失敗しました');
+  }
+  // 共有フォルダへは自動で書かない（手動保存方式）。未保存フラグだけ立てる
+  if (!hasUnsavedChanges) {
+    hasUnsavedChanges = true;
+    updateSyncStatus();
+  }
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      state.staff = data.staff || [];
+      state.groups = data.groups || [];
+      state.currentMonth = data.currentMonth || null;
+      state.months = data.months || {};
+      state.minEmployees = data.minEmployees || 0;
+      nextStaffId = data.nextStaffId || 1;
+      nextGroupId = data.nextGroupId || 1;
+    }
+  } catch (e) {
+    console.error('読み込み失敗:', e);
+  }
+
+  // 現在月が未設定なら今月を設定
+  if (!state.currentMonth) {
+    const now = new Date();
+    state.currentMonth = formatMonth(now.getFullYear(), now.getMonth() + 1);
+  }
+  ensureMonthData(state.currentMonth);
+}
+
+/* ===== 共有フォルダ同期 (File System Access API) ===== */
+const SHARED_FILE_NAME = 'shift-data.json';
+const HANDLE_DB_NAME = 'shift_app_handle_db';
+const HANDLE_STORE = 'handles';
+let sharedFolderHandle = null;
+let sharedFolderName = null;
+let sharedFolderNeedsReauth = false; // 権限切れフラグ（true の間は自動書き込みをスキップ）
+let isWritingShared = false; // 書き込み競合防止
+let lastSharedFolderError = null; // 直近の失敗情報をモーダルで表示するため保持
+
+function isFileSystemAccessSupported() {
+  return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
+}
+
+// 診断ログを設定モーダル内の <pre id="folder-diag-log"> に追記する
+function folderDiagLog(msg, kind = 'info') {
+  const el = document.getElementById('folder-diag-log');
+  console.log(`[Folder][${kind}] ${msg}`);
+  if (!el) return;
+  const colors = { info: '#374151', ok: '#059669', fail: '#DC2626', warn: '#D97706' };
+  const icons  = { info: '○', ok: '✓', fail: '✗', warn: '⚠' };
+  const line = document.createElement('div');
+  line.style.cssText = `color:${colors[kind] || '#374151'};font-size:11px;line-height:1.5;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-all;`;
+  const ts = new Date().toLocaleTimeString('ja-JP', { hour12: false });
+  line.textContent = `${icons[kind] || '○'} [${ts}] ${msg}`;
+  el.appendChild(line);
+  // 親要素もスクロール
+  el.scrollTop = el.scrollHeight;
+}
+
+function folderDiagClear() {
+  const el = document.getElementById('folder-diag-log');
+  if (el) el.innerHTML = '';
+}
+
+function openHandleDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HANDLE_DB_NAME, 1);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(HANDLE_STORE)) {
+        db.createObjectStore(HANDLE_STORE);
+      }
+    };
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function saveHandleToDB(handle) {
+  try {
+    const db = await openHandleDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readwrite');
+      tx.objectStore(HANDLE_STORE).put(handle, 'sharedFolder');
+      tx.oncomplete = () => resolve();
+      tx.onerror = (e) => reject(e.target.error);
+    });
+  } catch (e) {
+    console.error('ハンドル保存失敗:', e);
+  }
+}
+
+async function loadHandleFromDB() {
+  try {
+    const db = await openHandleDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readonly');
+      const req = tx.objectStore(HANDLE_STORE).get('sharedFolder');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = (e) => reject(e.target.error);
+    });
+  } catch (e) {
+    console.error('ハンドル読み込み失敗:', e);
+    return null;
+  }
+}
+
+async function clearHandleFromDB() {
+  try {
+    const db = await openHandleDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readwrite');
+      tx.objectStore(HANDLE_STORE).delete('sharedFolder');
+      tx.oncomplete = () => resolve();
+      tx.onerror = (e) => reject(e.target.error);
+    });
+  } catch (e) { console.error(e); }
+}
+
+// 共有フォルダを有効化（ユーザー操作起点で呼ぶ）
+// 設定モーダル内の <div id="folder-diag-log"> に進捗をライブ表示する
+async function enableSharedFolder() {
+  lastSharedFolderError = null;
+  folderDiagClear();
+  folderDiagLog('開始: 共有フォルダ設定');
+
+  if (!isFileSystemAccessSupported()) {
+    folderDiagLog('お使いのブラウザは File System Access API 未対応', 'fail');
+    lastSharedFolderError = { name: 'NotSupported', message: 'ブラウザ未対応（Chrome/Edge推奨）' };
+    showToast('お使いのブラウザはこの機能に対応していません（Chrome/Edge推奨）');
+    return false;
+  }
+  folderDiagLog('FSA サポート: OK', 'ok');
+
+  // ピッカー
+  folderDiagLog('フォルダピッカーを開きます…');
+  let handle;
+  try {
+    handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    folderDiagLog(`フォルダ選択: "${handle.name}" (kind=${handle.kind})`, 'ok');
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      // 注意: 本当のキャンセルだけでなく、ブラウザがフォルダを「拒否」した場合も
+      // 同じ AbortError になる（Chromium の仕様）。切り分けヒントを出す。
+      folderDiagLog(`AbortError: ${e.message || '(no msg)'}`, 'warn');
+      folderDiagLog('ヒント①: 自分でキャンセルしていないのにこれが出る場合、選んだフォルダがブラウザにブロックされています', 'warn');
+      folderDiagLog('ヒント②: ドライブ直下(C:\\ や \\\\サーバー\\共有 のルート)・ユーザーフォルダ直下・ダウンロードフォルダ・OneDriveルートは選択NG', 'warn');
+      folderDiagLog('ヒント③: 対象フォルダの中に一段深いサブフォルダ（例:「シフトデータ」）を作って、それを選び直してください', 'warn');
+      folderDiagLog('ヒント④: それでも出る場合は企業ポリシーの可能性 → edge://policy で FileSystem 系ポリシーを確認', 'warn');
+      lastSharedFolderError = { name: 'AbortError', message: 'キャンセル、またはブラウザによるフォルダ拒否' };
+      return false;
+    }
+    folderDiagLog(`ピッカー失敗: ${e.name} — ${e.message || '(no msg)'}`, 'fail');
+    lastSharedFolderError = { name: e.name, message: e.message || '' };
+    console.error('showDirectoryPicker failed:', e);
+    return false;
+  }
+
+  // 権限ステータスを照会（参考情報。実判定は write で行う）
+  try {
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    folderDiagLog(`queryPermission(readwrite) = ${perm}`, perm === 'granted' ? 'ok' : 'warn');
+  } catch (e) {
+    folderDiagLog(`queryPermission 例外（無視可）: ${e.name}`, 'warn');
+  }
+
+  // 旧ハンドルを退避（書き込み失敗時 rollback 用）
+  const prevHandle = sharedFolderHandle;
+  const prevName = sharedFolderName;
+  const prevNeedsReauth = sharedFolderNeedsReauth;
+
+  sharedFolderHandle = handle;
+  sharedFolderName = handle.name;
+  sharedFolderNeedsReauth = false;
+
+  // 既存ファイル読み込みを試す
+  folderDiagLog(`${SHARED_FILE_NAME} の存在チェック…`);
+  let existing = false;
+  try {
+    existing = await readFromSharedFolder();
+    folderDiagLog(existing ? '既存ファイル: 有り（state に読み込み済）' : '既存ファイル: 無し', existing ? 'ok' : 'info');
+  } catch (e) {
+    folderDiagLog(`読み込み中エラー（続行）: ${e.name} — ${e.message}`, 'warn');
+  }
+
+  // 書き込みテスト（既存有無に関わらず実施 → 権限の実証）
+  folderDiagLog('書き込みテスト開始…');
+  let writeError = null;
+  try {
+    folderDiagLog('getFileHandle(create:true) …');
+    const fileHandle = await handle.getFileHandle(SHARED_FILE_NAME, { create: true });
+    folderDiagLog('getFileHandle: OK', 'ok');
+
+    folderDiagLog('createWritable …');
+    const writable = await fileHandle.createWritable();
+    folderDiagLog('createWritable: OK', 'ok');
+
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      staff: state.staff,
+      groups: state.groups,
+      currentMonth: state.currentMonth,
+      months: state.months,
+      minEmployees: state.minEmployees,
+      nextStaffId, nextGroupId,
+    };
+    const json = JSON.stringify(payload, null, 2);
+    folderDiagLog(`write (${json.length} bytes) …`);
+    await writable.write(json);
+    folderDiagLog('write: OK', 'ok');
+
+    folderDiagLog('close …');
+    await writable.close();
+    folderDiagLog('close: OK', 'ok');
+
+    // 書き戻し確認（実際にファイルが残ってるか）
+    folderDiagLog('書き戻し確認 …');
+    const verifyHandle = await handle.getFileHandle(SHARED_FILE_NAME, { create: false });
+    const verifyFile = await verifyHandle.getFile();
+    folderDiagLog(`書き戻し確認: OK (${verifyFile.size} bytes)`, 'ok');
+  } catch (e) {
+    writeError = e;
+    folderDiagLog(`書き込み失敗: ${e.name} — ${e.message || '(no msg)'}`, 'fail');
+  }
+
+  if (writeError) {
+    // 書き込み失敗 → rollback
+    sharedFolderHandle = prevHandle;
+    sharedFolderName = prevName;
+    sharedFolderNeedsReauth = prevNeedsReauth;
+
+    let hint = '';
+    const nm = writeError.name || '';
+    if (nm === 'NotAllowedError') {
+      hint = '書き込み許可が取得できていません（ピッカーで「保存」承認していない、又はOS/IT制限）。';
+    } else if (nm === 'NoModificationAllowedError') {
+      hint = 'フォルダが書き込み禁止です（読み取り専用属性 / 別アプリがロック中）。';
+    } else if (nm === 'SecurityError') {
+      hint = 'ブラウザのセキュリティ制限（システムフォルダ / Downloads等）。別フォルダで試してください。';
+    } else if (nm === 'InvalidStateError') {
+      hint = 'フォルダ状態が無効（OneDrive/Dropbox 同期中、ネットワーク切断など）。';
+    } else if (nm === 'AbortError') {
+      hint = '操作が中断されました（タイムアウトやキャンセル）。';
+    } else {
+      hint = '不明なエラー。フォルダ・ブラウザ・OSの組み合わせを確認してください。';
+    }
+    lastSharedFolderError = { name: nm, message: writeError.message || '', hint };
+    folderDiagLog(`原因ヒント: ${hint}`, 'fail');
+    folderDiagLog('rollback 実施', 'warn');
+    console.error('Initial write to shared folder failed:', writeError);
+    showToast('共有フォルダ設定失敗: ' + (writeError.message || writeError.name));
+    return false;
+  }
+
+  folderDiagLog('全工程 OK ✓✓✓', 'ok');
+
+  // 書き込み成功 → 確定
+  updateSyncStatus();
+
+  // ハンドル永続化
+  try {
+    folderDiagLog('IndexedDB にハンドル保存…');
+    await saveHandleToDB(handle);
+    folderDiagLog('IndexedDB: OK', 'ok');
+  } catch (e) {
+    folderDiagLog(`IndexedDB 失敗（無視可・毎回フォルダ選択になります）: ${e.name}`, 'warn');
+  }
+
+  hasUnsavedChanges = false; // 設定直後はフォルダと同期済み
+  showToast(existing
+    ? `「${handle.name}」からデータを読み込みました`
+    : `「${handle.name}」を同期フォルダにしました（${SHARED_FILE_NAME} 作成済）`
+  );
+  renderAll();
+  return true;
+}
+
+// 共有フォルダ無効化
+async function disableSharedFolder() {
+  sharedFolderHandle = null;
+  sharedFolderName = null;
+  sharedFolderNeedsReauth = false;
+  await clearHandleFromDB();
+  showToast('共有フォルダ同期を解除しました');
+}
+
+// 共有フォルダから読み込み（state に反映）。データがあれば true、なければ false
+async function readFromSharedFolder() {
+  if (!sharedFolderHandle) return false;
+  try {
+    let fileHandle;
+    try {
+      fileHandle = await sharedFolderHandle.getFileHandle(SHARED_FILE_NAME, { create: false });
+    } catch (e) {
+      // ファイル未作成
+      return false;
+    }
+    const file = await fileHandle.getFile();
+    const text = await file.text();
+    if (!text.trim()) return false;
+    const data = JSON.parse(text);
+    if (data && data.staff !== undefined) {
+      state.staff = data.staff || [];
+      state.groups = data.groups || [];
+      state.currentMonth = data.currentMonth || state.currentMonth;
+      state.months = data.months || {};
+      state.minEmployees = data.minEmployees || 0;
+      nextStaffId = data.nextStaffId || 1;
+      nextGroupId = data.nextGroupId || 1;
+      ensureMonthData(state.currentMonth);
+      // localStorage にも反映
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        staff: state.staff, groups: state.groups,
+        currentMonth: state.currentMonth, months: state.months,
+        minEmployees: state.minEmployees,
+        nextStaffId, nextGroupId,
+      }));
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.error('共有フォルダ読み込み失敗:', e);
+    showToast('共有フォルダ読み込み失敗: ' + e.message);
+    return false;
+  }
+}
+
+// 共有フォルダへ書き込み（「保存」ボタン / Ctrl+S からの手動保存で呼ばれる）
+async function writeToSharedFolder() {
+  if (!sharedFolderHandle || isWritingShared) return;
+  // 権限切れ状態では試さない（毎回トーストが出るのを防ぐ）
+  if (sharedFolderNeedsReauth) {
+    throw new Error('権限切れ：ヘッダーの同期ステータスをクリックして再承認してください');
+  }
+  isWritingShared = true;
+  try {
+    const fileHandle = await sharedFolderHandle.getFileHandle(SHARED_FILE_NAME, { create: true });
+    const writable = await fileHandle.createWritable();
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      staff: state.staff,
+      groups: state.groups,
+      currentMonth: state.currentMonth,
+      months: state.months,
+      minEmployees: state.minEmployees,
+      nextStaffId, nextGroupId,
+    };
+    await writable.write(JSON.stringify(payload, null, 2));
+    await writable.close();
+  } catch (e) {
+    // 権限切れ系のエラーならフラグを立てて、ヘッダーで再承認を促す
+    if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
+      sharedFolderNeedsReauth = true;
+      updateSyncStatus();
+    }
+    throw e;
+  } finally {
+    isWritingShared = false;
+  }
+}
+
+// 手動保存（保存ボタン / Ctrl+S）。ユーザー操作起点なので権限要求も可能
+async function manualSave() {
+  if (!sharedFolderHandle) {
+    showToast('共有フォルダが未設定です。⚙設定から選択してください');
+    openSettingsModal();
+    return;
+  }
+  try {
+    let perm = 'prompt';
+    try {
+      perm = await sharedFolderHandle.queryPermission({ mode: 'readwrite' });
+    } catch (e) { console.warn('queryPermission failed:', e); }
+    if (perm !== 'granted') {
+      perm = await sharedFolderHandle.requestPermission({ mode: 'readwrite' });
+    }
+    if (perm !== 'granted') {
+      showToast('書き込み許可が得られませんでした（⚙設定から再選択できます）');
+      return;
+    }
+    sharedFolderNeedsReauth = false;
+    await writeToSharedFolder();
+    hasUnsavedChanges = false;
+    lastSavedAt = new Date();
+    updateSyncStatus();
+    showToast(`「${sharedFolderName}」に保存しました`);
+  } catch (e) {
+    console.error('手動保存失敗:', e);
+    showToast('保存失敗: ' + (e.message || e.name));
+    updateSyncStatus();
+  }
+}
+
+// 起動時：共有フォルダ選択画面（前回フォルダへのワンクリック再接続付き）
+async function showStartupFolderScreen() {
+  if (!isFileSystemAccessSupported()) return;
+  let storedHandle = null;
+  try { storedHandle = await loadHandleFromDB(); } catch (e) { console.warn(e); }
+  const name = storedHandle ? storedHandle.name : null;
+
+  const ov = document.createElement('div');
+  ov.id = 'startup-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(17,24,39,.55);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  ov.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:24px;max-width:440px;width:90%;box-shadow:0 20px 50px rgba(0,0,0,.3);">
+      <div style="font-size:16px;font-weight:700;margin-bottom:6px;">共有フォルダの選択</div>
+      <div style="font-size:12px;color:#6B7280;line-height:1.6;margin-bottom:16px;">
+        シフトデータ（${SHARED_FILE_NAME}）の保存先を選んでください。<br>
+        作業中はこのPC内に自動保存され、共有フォルダへは<strong>「保存」ボタン（Ctrl+S）で手動保存</strong>します。
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${name ? `
+        <button id="su-reconnect" class="btn btn-primary" style="width:100%;">📂 前回のフォルダ「${escapeHtml(name)}」に再接続して読み込む</button>
+        <button id="su-reconnect-keep" class="btn btn-secondary" style="width:100%;">🔗 再接続のみ（このPCの作業データを保持）</button>` : ''}
+        <button id="su-pick" class="btn ${name ? 'btn-secondary' : 'btn-primary'}" style="width:100%;">${name ? '別のフォルダを選ぶ' : '共有フォルダを選ぶ'}</button>
+        <button id="su-skip" class="btn btn-secondary" style="width:100%;">フォルダなしで続行（このPCのみ）</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = () => ov.remove();
+
+  if (name) {
+    document.getElementById('su-reconnect').addEventListener('click', async () => {
+      const ok = await reconnectStoredHandle(storedHandle, true);
+      if (ok) close();
+    });
+    document.getElementById('su-reconnect-keep').addEventListener('click', async () => {
+      const ok = await reconnectStoredHandle(storedHandle, false);
+      if (ok) close();
+    });
+  }
+  document.getElementById('su-pick').addEventListener('click', async () => {
+    close();
+    const ok = await enableSharedFolder();
+    if (!ok) showToast('⚙設定からいつでも共有フォルダを設定できます');
+  });
+  document.getElementById('su-skip').addEventListener('click', () => {
+    close();
+    updateSyncStatus();
+  });
+}
+
+// 保存済みハンドルへの再接続（loadData=true でフォルダのJSONを読み込む）
+async function reconnectStoredHandle(handle, loadData) {
+  try {
+    let perm = 'prompt';
+    try {
+      perm = await handle.queryPermission({ mode: 'readwrite' });
+    } catch (e) { console.warn('queryPermission on reconnect failed:', e); }
+    if (perm !== 'granted') {
+      perm = await handle.requestPermission({ mode: 'readwrite' });
+    }
+    if (perm !== 'granted') {
+      showToast('アクセス許可が得られませんでした。「別のフォルダを選ぶ」を試してください');
+      return false;
+    }
+    sharedFolderHandle = handle;
+    sharedFolderName = handle.name;
+    sharedFolderNeedsReauth = false;
+    if (loadData) {
+      const loaded = await readFromSharedFolder();
+      hasUnsavedChanges = false;
+      showToast(loaded
+        ? `「${handle.name}」から読み込みました`
+        : `「${handle.name}」に再接続しました（${SHARED_FILE_NAME} はまだありません）`);
+    } else {
+      // ローカルの作業データを保持 → フォルダとは差分がある扱い
+      hasUnsavedChanges = true;
+      showToast(`「${handle.name}」に再接続しました。Ctrl+S でこのPCのデータを保存できます`);
+    }
+    renderAll();
+    return true;
+  } catch (e) {
+    console.error('再接続失敗:', e);
+    showToast('再接続失敗: ' + (e.message || e.name));
+    return false;
+  }
+}
+
+// 同期動作テスト：強制書き込み → 読み戻し → 結果表示
+async function testSharedFolderSync() {
+  if (!sharedFolderHandle) {
+    alert('共有フォルダが設定されていません');
+    return;
+  }
+  try {
+    // 許可状態の確認（このボタンクリック時の user activation で requestPermission を呼べる）
+    let perm;
+    try {
+      perm = await sharedFolderHandle.queryPermission({ mode: 'readwrite' });
+    } catch (e) {
+      console.warn('queryPermission in test failed:', e);
+      perm = 'prompt';
+    }
+    if (perm !== 'granted') {
+      try {
+        perm = await sharedFolderHandle.requestPermission({ mode: 'readwrite' });
+      } catch (e) {
+        alert(`❌ 許可要求エラー: ${e.name} - ${e.message}\n\n別のフォルダを試すか、ブラウザを再起動してみてください。`);
+        return;
+      }
+    }
+    if (perm !== 'granted') {
+      alert(`❌ テスト失敗: 書き込み許可がありません（状態: ${perm}）\n\nブラウザの設定や管理者ポリシーで制限されている可能性があります。`);
+      return;
+    }
+
+    // 許可が取れた → reauth フラグをクリア
+    sharedFolderNeedsReauth = false;
+    updateSyncStatus();
+
+    // 書き込み試行
+    showToast('テスト書き込み中…');
+    await writeToSharedFolder();
+
+    // 読み戻し試行
+    const fileHandle = await sharedFolderHandle.getFileHandle(SHARED_FILE_NAME, { create: false });
+    const file = await fileHandle.getFile();
+    const sizeKB = (file.size / 1024).toFixed(1);
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+
+    const msg = `✅ テスト成功！
+
+フォルダ: ${sharedFolderName}
+ファイル: ${SHARED_FILE_NAME}
+サイズ: ${sizeKB} KB
+最終保存: ${parsed.exportedAt}
+スタッフ数: ${(parsed.staff || []).length}名
+
+このフォルダを覗くと shift-data.json が見えるはずです。`;
+    alert(msg);
+    showToast('テスト成功');
+  } catch (e) {
+    console.error(e);
+    alert(`❌ テスト失敗\n\nエラー: ${e.message || e.name}\n\n考えられる原因:\n・選択したフォルダにブラウザが書き込めない\n・IT管理ポリシーでローカル書き込みが制限\n・ネットワーク経由フォルダ（UNCパス）でアクセス不可\n\n対策: JSONエクスポート/インポートでの手動運用に切り替えてください。`);
+    showToast('テスト失敗（詳細はアラートに表示）');
+  }
+}
+
+// 保留中のハンドルに対する許可要求（ユーザー操作起点）
+async function requestPendingPermission() {
+  if (!sharedFolderHandle) return false;
+  try {
+    const perm = await sharedFolderHandle.requestPermission({ mode: 'readwrite' });
+    if (perm === 'granted') {
+      sharedFolderNeedsReauth = false;
+      const loaded = await readFromSharedFolder();
+      updateSyncStatus();
+      renderAll();
+      showToast(`共有フォルダ「${sharedFolderName}」と同期再開${loaded ? '・データ読み込み済' : ''}`);
+      return true;
+    }
+    showToast('アクセス許可が得られませんでした');
+    return false;
+  } catch (e) {
+    console.error(e);
+    showToast('許可要求失敗: ' + e.message);
+    return false;
+  }
+}
+
+/* ===== JSONエクスポート/インポート（手動バックアップ） ===== */
+function exportDataToJson() {
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    staff: state.staff,
+    groups: state.groups,
+    currentMonth: state.currentMonth,
+    months: state.months,
+    minEmployees: state.minEmployees,
+    nextStaffId, nextGroupId,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const today = new Date();
+  const fname = `shift_backup_${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}.json`;
+  a.href = url;
+  a.download = fname;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('バックアップファイルを保存しました');
+}
+
+function importDataFromJson(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (!data || data.staff === undefined) throw new Error('不正なバックアップファイルです');
+        state.staff = data.staff || [];
+        state.groups = data.groups || [];
+        state.currentMonth = data.currentMonth || state.currentMonth;
+        state.months = data.months || {};
+        state.minEmployees = data.minEmployees || 0;
+        nextStaffId = data.nextStaffId || 1;
+        nextGroupId = data.nextGroupId || 1;
+        ensureMonthData(state.currentMonth);
+        saveState();
+        renderAll();
+        showToast('バックアップから復元しました');
+        resolve();
+      } catch (err) {
+        showToast('読み込みエラー: ' + err.message);
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error('ファイル読み込み失敗'));
+    reader.readAsText(file);
+  });
+}
+
+/* ===== 日付ユーティリティ ===== */
+function formatMonth(year, month) {
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+function parseMonth(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return { year: y, month: m };
+}
+
+function daysInMonth(ym) {
+  const { year, month } = parseMonth(ym);
+  return new Date(year, month, 0).getDate();
+}
+
+function dayOfWeek(ym, day) {
+  const { year, month } = parseMonth(ym);
+  return new Date(year, month - 1, day).getDay(); // 0=日, 6=土
+}
+
+const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
+
+function ensureMonthData(ym) {
+  if (!state.months[ym]) {
+    state.months[ym] = {
+      requiredStaff: new Array(daysInMonth(ym)).fill(0),
+      requiredEmployee: new Array(daysInMonth(ym)).fill(0),
+      paidLeaves: {},
+      shifts: {},
+      generated: false,
+    };
+  } else {
+    // generated フラグの旧データ互換性
+    if (state.months[ym].generated === undefined) {
+      state.months[ym].generated = Object.keys(state.months[ym].shifts || {}).length > 0;
+    }
+    // 日数調整（月によって28-31日）
+    const days = daysInMonth(ym);
+    if (state.months[ym].requiredStaff.length !== days) {
+      const arr = new Array(days).fill(0);
+      for (let i = 0; i < Math.min(days, state.months[ym].requiredStaff.length); i++) {
+        arr[i] = state.months[ym].requiredStaff[i];
+      }
+      state.months[ym].requiredStaff = arr;
+    }
+    // requiredEmployee の旧データ互換性 + 日数調整
+    if (!state.months[ym].requiredEmployee) {
+      state.months[ym].requiredEmployee = new Array(days).fill(0);
+    } else if (state.months[ym].requiredEmployee.length !== days) {
+      const arr = new Array(days).fill(0);
+      for (let i = 0; i < Math.min(days, state.months[ym].requiredEmployee.length); i++) {
+        arr[i] = state.months[ym].requiredEmployee[i];
+      }
+      state.months[ym].requiredEmployee = arr;
+    }
+  }
+}
+
+function isMonthGenerated() {
+  const md = state.months[state.currentMonth];
+  return !!(md && md.generated);
+}
+
+/* ===== ID生成 ===== */
+function newStaffId() { return nextStaffId++; }
+function newGroupId() { return nextGroupId++; }
+
+/* ===== UI共通 ===== */
+function showToast(msg, duration = 2200) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+function showModal(html) {
+  const bd = document.getElementById('modal-backdrop');
+  document.getElementById('modal-content').innerHTML = html;
+  bd.classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('modal-backdrop').classList.add('hidden');
+}
+
+function confirmDialog(message, onConfirm) {
+  showModal(`
+    <div class="modal-title">確認</div>
+    <div style="margin-bottom:16px;font-size:13px;color:#374151;">${escapeHtml(message)}</div>
+    <div class="modal-actions">
+      <div></div>
+      <div class="modal-actions-right">
+        <button class="btn btn-secondary" id="confirm-cancel">キャンセル</button>
+        <button class="btn btn-danger" id="confirm-ok">削除</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('confirm-cancel').addEventListener('click', closeModal);
+  document.getElementById('confirm-ok').addEventListener('click', () => {
+    closeModal();
+    onConfirm();
+  });
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[c]);
+}
+
+/* ===== シフト種別の定義 ===== */
+const SHIFT_TYPES = {
+  '':         { label: '未設定', class: 'cell-off', text: '', countAsWork: false, countAsHoliday: false, locked: false, excel: '' },
+  'work':     { label: '出勤',   class: 'cell-work', text: '出', countAsWork: true,  countAsHoliday: false, locked: false, excel: '' },
+  'off':      { label: '休み',   class: 'cell-off', text: '休', countAsWork: false, countAsHoliday: true, locked: false, excel: '休' },
+  'holiday':  { label: '希望休', class: 'cell-holiday', text: '希', countAsWork: false, countAsHoliday: true, locked: true, excel: '休' },
+  'required': { label: '必須出勤', class: 'cell-required', text: '必', countAsWork: true, countAsHoliday: false, locked: true, excel: '' },
+  'training': { label: '研修',   class: 'cell-training', text: '研', countAsWork: false, countAsHoliday: false, locked: false, excel: '研' },
+};
+
+function getShift(staffId, day) {
+  const md = state.months[state.currentMonth];
+  if (!md) return '';
+  const key = `${staffId}_${day}`;
+  return md.shifts[key] || '';
+}
+
+function setShift(staffId, day, type) {
+  const md = state.months[state.currentMonth];
+  const key = `${staffId}_${day}`;
+  if (type === '' || type === null) {
+    delete md.shifts[key];
+  } else {
+    md.shifts[key] = type;
+  }
+}
+
+/* スタッフが当日「現場にいる」か（出勤扱いか）
+ * 明示的に countAsWork=true のシフトのみカウント。未設定はカウントしない。
+ * ※ 生成後は全員 'work' or 'off' に確定するので未設定が残らない想定。
+ */
+function isOnSite(staffId, day) {
+  const t = getShift(staffId, day);
+  if (!t) return false;
+  const def = SHIFT_TYPES[t];
+  return !!(def && def.countAsWork);
+}
+
+</script>
+<script>
+/* ===== サイドバー描画 ===== */
+function renderSidebar() {
+  renderStaffList();
+  renderGroupList();
+}
+
+function renderStaffList() {
+  const container = document.getElementById('staff-list');
+  document.getElementById('staff-count').textContent = `(${state.staff.length}名)`;
+
+  const byCat = {};
+  CATEGORIES.forEach(c => byCat[c] = []);
+  state.staff.forEach(s => {
+    if (byCat[s.category]) byCat[s.category].push(s);
+  });
+
+  let html = '';
+  CATEGORIES.forEach(cat => {
+    html += `<div class="category-label">${escapeHtml(cat)}</div>`;
+    if (byCat[cat].length === 0) {
+      html += `<div class="empty-msg">なし</div>`;
+    } else {
+      byCat[cat].forEach(s => {
+        const group = state.groups.find(g => g.id === s.groupId);
+        const groupTag = group
+          ? `<span class="group-tag group-tag-${group.color}" style="background:${groupSwatchBg(group.color)};color:${groupSwatchFg(group.color)}">${escapeHtml(group.name)}</span>`
+          : '';
+        const timeStr = formatTime(s.startHour, s.startMin) + '-' + formatTime(s.endHour, s.endMin);
+        const holidayStr = `休${s.holidayBase}日`;
+        html += `
+          <div class="staff-card" data-staff-id="${s.id}">
+            <div class="staff-name">${escapeHtml(s.name)} ${groupTag}</div>
+            <div class="staff-meta">${timeStr} ／ ${holidayStr}</div>
+          </div>
+        `;
+      });
+    }
+  });
+  container.innerHTML = html;
+
+  // クリックで編集
+  container.querySelectorAll('.staff-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const id = parseInt(card.dataset.staffId);
+      openStaffModal(id);
+    });
+  });
+}
+
+function renderGroupList() {
+  const container = document.getElementById('group-list');
+  if (state.groups.length === 0) {
+    container.innerHTML = '<div class="empty-msg">グループなし</div>';
+    return;
+  }
+  let html = '';
+  state.groups.forEach(g => {
+    const members = state.staff.filter(s => s.groupId === g.id).map(s => s.name).join('・');
+    html += `
+      <div class="group-card" data-group-id="${g.id}">
+        <div class="group-name">
+          <span class="group-swatch" style="background:${groupSwatchBg(g.color)};border:1px solid ${groupSwatchBorder(g.color)}"></span>
+          ${escapeHtml(g.name)}
+        </div>
+        <div class="group-members">${escapeHtml(members) || '（メンバーなし）'}</div>
+      </div>
+    `;
+  });
+  container.innerHTML = html;
+
+  container.querySelectorAll('.group-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const id = parseInt(card.dataset.groupId);
+      openGroupModal(id);
+    });
+  });
+}
+
+function groupSwatchBg(color) {
+  return { a: '#FFFBEB', b: '#F0FDF4', c: '#EFF6FF', d: '#FAF5FF' }[color] || '#F3F4F6';
+}
+function groupSwatchBorder(color) {
+  return { a: '#FDE68A', b: '#BBF7D0', c: '#BFDBFE', d: '#DDD6FE' }[color] || '#D1D5DB';
+}
+function groupSwatchFg(color) {
+  return { a: '#92400E', b: '#065F46', c: '#1E40AF', d: '#5B21B6' }[color] || '#374151';
+}
+
+function formatTime(h, m) {
+  return `${h}:${String(m || 0).padStart(2, '0')}`;
+}
+
+/* ===== スタッフモーダル ===== */
+function openStaffModal(staffId) {
+  const isEdit = staffId != null;
+  const s = isEdit ? state.staff.find(x => x.id === staffId) : null;
+
+  const groupOptions = ['<option value="">グループなし</option>']
+    .concat(state.groups.map(g => `<option value="${g.id}" ${s && s.groupId === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>`))
+    .join('');
+
+  const catOptions = CATEGORIES.map(c =>
+    `<option value="${c}" ${s && s.category === c ? 'selected' : (!s && c === '社員' ? 'selected' : '')}>${c}</option>`
+  ).join('');
+
+  const html = `
+    <div class="modal-title">${isEdit ? 'スタッフ編集' : 'スタッフ追加'}</div>
+
+    <div class="form-row">
+      <label class="form-label">名前</label>
+      <input type="text" class="form-input" id="sm-name" value="${s ? escapeHtml(s.name) : ''}" placeholder="例: 田中">
+    </div>
+
+    <div class="form-row">
+      <label class="form-label">属性</label>
+      <select class="form-select" id="sm-category">${catOptions}</select>
+    </div>
+
+    <div class="form-row-grid">
+      <div class="form-row">
+        <label class="form-label">出勤時刻</label>
+        <div style="display:flex;gap:4px;align-items:center;">
+          <input type="number" class="form-input" id="sm-start-h" min="0" max="23" value="${s ? s.startHour : 9}" style="width:60px;">
+          <span>:</span>
+          <input type="number" class="form-input" id="sm-start-m" min="0" max="59" step="5" value="${s ? (s.startMin || 0) : 0}" style="width:60px;">
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">退勤時刻</label>
+        <div style="display:flex;gap:4px;align-items:center;">
+          <input type="number" class="form-input" id="sm-end-h" min="0" max="23" value="${s ? s.endHour : 18}" style="width:60px;">
+          <span>:</span>
+          <input type="number" class="form-input" id="sm-end-m" min="0" max="59" step="5" value="${s ? (s.endMin || 0) : 0}" style="width:60px;">
+        </div>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <label class="form-label">月の基本休日数 <span id="sm-holiday-hint" style="font-weight:400;color:#6B7280;font-size:11px;"></span></label>
+      <input type="number" class="form-input" id="sm-holiday" min="0" max="31" value="${s ? s.holidayBase : 10}">
+    </div>
+
+    <div class="form-row">
+      <label class="form-label">グループ</label>
+      <select class="form-select" id="sm-group">${groupOptions}</select>
+    </div>
+
+    <div class="modal-actions">
+      <div>${isEdit ? `<button class="btn btn-danger" id="sm-delete">削除</button>` : ''}</div>
+      <div class="modal-actions-right">
+        <button class="btn btn-secondary" id="sm-cancel">キャンセル</button>
+        <button class="btn btn-primary" id="sm-save">保存</button>
+      </div>
+    </div>
+  `;
+  showModal(html);
+
+  // カテゴリーに応じて休日数のヒント表示
+  function updateHint() {
+    const cat = document.getElementById('sm-category').value;
+    const hint = document.getElementById('sm-holiday-hint');
+    if (cat === '社員') hint.textContent = '（社員：基本10日）';
+    else if (cat === 'パート・派遣') hint.textContent = '（個別設定）';
+    else hint.textContent = '（個別設定）';
+  }
+  document.getElementById('sm-category').addEventListener('change', updateHint);
+  updateHint();
+
+  document.getElementById('sm-cancel').addEventListener('click', closeModal);
+  document.getElementById('sm-save').addEventListener('click', () => {
+    const name = document.getElementById('sm-name').value.trim();
+    if (!name) { showToast('名前を入力してください'); return; }
+    const category = document.getElementById('sm-category').value;
+    const startHour = parseInt(document.getElementById('sm-start-h').value) || 0;
+    const startMin = parseInt(document.getElementById('sm-start-m').value) || 0;
+    const endHour = parseInt(document.getElementById('sm-end-h').value) || 0;
+    const endMin = parseInt(document.getElementById('sm-end-m').value) || 0;
+    const holidayBase = parseInt(document.getElementById('sm-holiday').value) || 0;
+    const groupIdRaw = document.getElementById('sm-group').value;
+    const groupId = groupIdRaw === '' ? null : parseInt(groupIdRaw);
+
+    if (isEdit) {
+      Object.assign(s, { name, category, startHour, startMin, endHour, endMin, holidayBase, groupId });
+    } else {
+      state.staff.push({
+        id: newStaffId(),
+        name, category, startHour, startMin, endHour, endMin, holidayBase, groupId,
+      });
+    }
+    saveState();
+    closeModal();
+    renderAll();
+  });
+
+  if (isEdit) {
+    document.getElementById('sm-delete').addEventListener('click', () => {
+      closeModal();
+      confirmDialog(
+        `「${s.name}」を削除しますか？\nこのスタッフの全シフトデータも削除されます。\nこの操作は取り消せません。`,
+        () => deleteStaff(staffId)
+      );
+    });
+  }
+}
+
+function deleteStaff(staffId) {
+  state.staff = state.staff.filter(s => s.id !== staffId);
+  // 全月のシフトから削除
+  Object.values(state.months).forEach(md => {
+    Object.keys(md.shifts).forEach(k => {
+      if (k.startsWith(`${staffId}_`)) delete md.shifts[k];
+    });
+    if (md.paidLeaves) delete md.paidLeaves[staffId];
+  });
+  saveState();
+  renderAll();
+  showToast('削除しました');
+}
+
+/* ===== グループモーダル ===== */
+function openGroupModal(groupId) {
+  const isEdit = groupId != null;
+  const g = isEdit ? state.groups.find(x => x.id === groupId) : null;
+
+  const usedColors = state.groups.filter(x => !g || x.id !== g.id).map(x => x.color);
+  const availColors = GROUP_COLORS.filter(c => !usedColors.includes(c));
+  const currentColor = g ? g.color : availColors[0];
+
+  const colorOptions = GROUP_COLORS.map(c => {
+    const disabled = (!g || g.color !== c) && usedColors.includes(c);
+    const checked = c === currentColor;
+    return `
+      <label class="checkbox-row" style="${disabled ? 'opacity:0.4;pointer-events:none;' : 'cursor:pointer;'}">
+        <input type="radio" name="gm-color" value="${c}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+        <span class="group-swatch" style="background:${groupSwatchBg(c)};border:1px solid ${groupSwatchBorder(c)};"></span>
+        色 ${c.toUpperCase()} ${disabled ? '(使用中)' : ''}
+      </label>
+    `;
+  }).join('');
+
+  let staffCheckboxes = '';
+  state.staff.forEach(s => {
+    const checked = (s.groupId === groupId);
+    const disabled = (s.groupId != null && s.groupId !== groupId);
+    staffCheckboxes += `
+      <label class="checkbox-row" style="${disabled ? 'opacity:0.4;' : ''}">
+        <input type="checkbox" name="gm-staff" value="${s.id}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+        ${escapeHtml(s.name)} <span style="color:#9CA3AF;font-size:11px;">（${escapeHtml(s.category)}）</span>
+        ${disabled ? '<span style="color:#9CA3AF;font-size:11px;">他グループ所属</span>' : ''}
+      </label>
+    `;
+  });
+  if (!staffCheckboxes) staffCheckboxes = '<div class="empty-msg">スタッフを先に追加してください</div>';
+
+  const html = `
+    <div class="modal-title">${isEdit ? 'グループ編集' : 'グループ追加'}</div>
+
+    <div class="form-row">
+      <label class="form-label">グループ名</label>
+      <input type="text" class="form-input" id="gm-name" value="${g ? escapeHtml(g.name) : ''}" placeholder="例: 早番">
+    </div>
+
+    <div class="form-row">
+      <label class="form-label">色</label>
+      ${colorOptions}
+    </div>
+
+    <div class="form-row">
+      <label class="form-label">メンバー（休みを被らせない対象）</label>
+      <div style="max-height:200px;overflow-y:auto;border:1px solid #E5E7EB;border-radius:4px;padding:8px;">
+        ${staffCheckboxes}
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <div>${isEdit ? `<button class="btn btn-danger" id="gm-delete">削除</button>` : ''}</div>
+      <div class="modal-actions-right">
+        <button class="btn btn-secondary" id="gm-cancel">キャンセル</button>
+        <button class="btn btn-primary" id="gm-save">保存</button>
+      </div>
+    </div>
+  `;
+  showModal(html);
+
+  document.getElementById('gm-cancel').addEventListener('click', closeModal);
+  document.getElementById('gm-save').addEventListener('click', () => {
+    const name = document.getElementById('gm-name').value.trim();
+    if (!name) { showToast('グループ名を入力してください'); return; }
+    const color = document.querySelector('input[name="gm-color"]:checked')?.value || 'a';
+    const memberIds = Array.from(document.querySelectorAll('input[name="gm-staff"]:checked'))
+      .map(el => parseInt(el.value));
+
+    if (isEdit) {
+      g.name = name;
+      g.color = color;
+    } else {
+      const newId = newGroupId();
+      state.groups.push({ id: newId, name, color });
+      groupId = newId;
+    }
+
+    // 既存メンバーから外し、新メンバーを設定
+    state.staff.forEach(s => {
+      if (s.groupId === groupId && !memberIds.includes(s.id)) s.groupId = null;
+      if (memberIds.includes(s.id)) s.groupId = groupId;
+    });
+
+    saveState();
+    closeModal();
+    renderAll();
+  });
+
+  if (isEdit) {
+    document.getElementById('gm-delete').addEventListener('click', () => {
+      closeModal();
+      confirmDialog(
+        `グループ「${g.name}」を削除しますか？\n所属スタッフのグループ設定は外れます（スタッフ自体は削除されません）。`,
+        () => deleteGroup(groupId)
+      );
+    });
+  }
+}
+
+function deleteGroup(groupId) {
+  state.groups = state.groups.filter(g => g.id !== groupId);
+  state.staff.forEach(s => { if (s.groupId === groupId) s.groupId = null; });
+  saveState();
+  renderAll();
+  showToast('削除しました');
+}
+
+</script>
+<script>
+/* ===== カレンダー描画 ===== */
+function renderCalendar() {
+  const ym = state.currentMonth;
+  const days = daysInMonth(ym);
+  const md = state.months[ym];
+  const calendar = document.getElementById('calendar');
+
+  // ヘッダー行
+  let theadHtml = '<thead><tr>';
+  theadHtml += '<th class="name-col">スタッフ</th>';
+  for (let d = 1; d <= days; d++) {
+    const dow = dayOfWeek(ym, d);
+    const dowCls = dow === 0 ? 'day-sun' : (dow === 6 ? 'day-sat' : '');
+    const weekStart = (dow === 0 && d > 1) ? ' week-start' : '';
+    theadHtml += `<th class="${weekStart}">${d}<br><span class="day-num ${dowCls}">${DOW_LABELS[dow]}</span></th>`;
+  }
+  theadHtml += '<th class="holiday-col">月休<br>日数</th>';
+  theadHtml += '</tr>';
+
+  // 必要人数行（全体）
+  theadHtml += '<tr class="req-row">';
+  theadHtml += '<td class="name-col">必要人数</td>';
+  for (let d = 1; d <= days; d++) {
+    const v = md.requiredStaff[d - 1] || 0;
+    const dow = dayOfWeek(ym, d);
+    const weekStart = (dow === 0 && d > 1) ? ' week-start' : '';
+    theadHtml += `<td class="${weekStart}"><input type="number" class="req-input" data-day="${d}" data-field="total" min="0" max="99" value="${v}"></td>`;
+  }
+  theadHtml += '<td class="holiday-col">―</td>';
+  theadHtml += '</tr></thead>';
+
+  // 本体（カテゴリーごとに区切り）
+  let tbodyHtml = '<tbody>';
+
+  // orderedStaffCache を再構築（カテゴリ順）
+  orderedStaffCache = [];
+  const byCat = {};
+  CATEGORIES.forEach(c => byCat[c] = []);
+  state.staff.forEach(s => {
+    if (byCat[s.category]) byCat[s.category].push(s);
+  });
+
+  let rowIdx = 0;
+  CATEGORIES.forEach(cat => {
+    if (byCat[cat].length === 0) return;
+    tbodyHtml += `<tr class="category-row"><td colspan="${days + 2}">${escapeHtml(cat)}</td></tr>`;
+    byCat[cat].forEach(s => {
+      orderedStaffCache.push(s);
+      tbodyHtml += renderStaffRow(s, rowIdx, days, ym, md);
+      rowIdx++;
+    });
+  });
+
+  if (state.staff.length === 0) {
+    tbodyHtml += `<tr><td colspan="${days + 2}" style="padding:30px;text-align:center;color:#9CA3AF;">左の＋ボタンからスタッフを追加してください</td></tr>`;
+  } else {
+    // 出勤数集計行
+    tbodyHtml += '<tr class="summary-row"><td class="name-col">出勤数</td>';
+    for (let d = 1; d <= days; d++) {
+      let count = 0;
+      state.staff.forEach(s => {
+        if (isOnSite(s.id, d)) count++;
+      });
+      const req = md.requiredStaff[d - 1] || 0;
+      const under = req > 0 && count < req && isMonthGenerated();
+      const dow = dayOfWeek(ym, d);
+      const weekStart = (dow === 0 && d > 1) ? ' week-start' : '';
+      tbodyHtml += `<td class="${under ? 'summary-under' : ''}${weekStart}">${count}</td>`;
+    }
+    tbodyHtml += '<td class="holiday-col">―</td></tr>';
+
+    // 社員出勤数集計行
+    tbodyHtml += '<tr class="summary-row summary-row-employee"><td class="name-col">うち社員</td>';
+    for (let d = 1; d <= days; d++) {
+      let count = 0;
+      state.staff.forEach(s => {
+        if (s.category === '社員' && isOnSite(s.id, d)) count++;
+      });
+      const reqEmp = state.minEmployees || 0;
+      const under = reqEmp > 0 && count < reqEmp && isMonthGenerated();
+      const borderline = reqEmp > 0 && count === reqEmp && isMonthGenerated();
+      const dow = dayOfWeek(ym, d);
+      const weekStart = (dow === 0 && d > 1) ? ' week-start' : '';
+      let cls = '';
+      if (under) cls = 'summary-under';
+      else if (borderline) cls = 'summary-borderline';
+      tbodyHtml += `<td class="${cls}${weekStart}">${count}</td>`;
+    }
+    tbodyHtml += '<td class="holiday-col">―</td></tr>';
+  }
+
+  tbodyHtml += '</tbody>';
+
+  calendar.innerHTML = theadHtml + tbodyHtml;
+
+  // イベントバインド
+  bindCalendarEvents();
+  updateSelectionUI();
+}
+
+function renderStaffRow(s, rowIndex, days, ym, md) {
+  const group = state.groups.find(g => g.id === s.groupId);
+  const tintClass = group ? `row-tint-${group.color}` : '';
+
+  let html = `<tr class="${tintClass}" data-staff-id="${s.id}" data-row-index="${rowIndex}">`;
+  html += `<td class="name-col">${escapeHtml(s.name)}</td>`;
+
+  for (let d = 1; d <= days; d++) {
+    const type = getShift(s.id, d);
+    const def = SHIFT_TYPES[type] || SHIFT_TYPES[''];
+    const dow = dayOfWeek(ym, d);
+    const weekStart = (dow === 0 && d > 1) ? ' week-start' : '';
+    html += `<td class="${weekStart}"><div class="cell ${def.class}" data-staff-id="${s.id}" data-row-index="${rowIndex}" data-day="${d}">${def.text}</div></td>`;
+  }
+
+  // 月休日数表示: 実休数 / 規定休数（規定は編集可能）
+  const expectedHoliday = s.holidayBase;
+  const actualHoliday = countActualHolidays(s.id, days);
+  // ぴったり以外（不足も超過も）を赤字強調
+  const understaffed = actualHoliday !== expectedHoliday;
+
+  const holidayCellHtml = `
+    <div style="display:flex;align-items:center;justify-content:center;gap:2px;font-size:11px;font-weight:700;">
+      <span class="holiday-display ${understaffed ? 'holiday-mismatch' : ''}" title="実休数 / 規定">${actualHoliday}</span>
+      <span style="color:#9CA3AF;">/</span>
+      <input type="number" class="holiday-base-input" data-staff-id="${s.id}" min="0" max="31" value="${expectedHoliday}" title="規定休日数（クリックで変更）">
+    </div>
+  `;
+  html += `<td class="holiday-col">${holidayCellHtml}</td>`;
+  html += '</tr>';
+  return html;
+}
+
+function countActualHolidays(staffId, days) {
+  let count = 0;
+  for (let d = 1; d <= days; d++) {
+    const type = getShift(staffId, d);
+    if (SHIFT_TYPES[type] && SHIFT_TYPES[type].countAsHoliday) count++;
+  }
+  return count;
+}
+
+function bindCalendarEvents() {
+  // セルのドラッグ選択 + クリック
+  document.querySelectorAll('.cell[data-staff-id]').forEach(el => {
+    el.addEventListener('mousedown', onCellMouseDown);
+    el.addEventListener('mouseenter', onCellMouseEnter);
+  });
+
+  // 必要人数入力
+  document.querySelectorAll('.req-input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const day = parseInt(inp.dataset.day);
+      const md = state.months[state.currentMonth];
+      md.requiredStaff[day - 1] = parseInt(inp.value) || 0;
+      saveState();
+      renderCalendar();
+      checkAndRenderViolations();
+    });
+  });
+
+  // 月休日数の規定値（分母）編集
+  document.querySelectorAll('.holiday-base-input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const staffId = parseInt(inp.dataset.staffId);
+      const staff = state.staff.find(s => s.id === staffId);
+      if (!staff) return;
+      const v = parseInt(inp.value);
+      if (isNaN(v) || v < 0) { inp.value = staff.holidayBase; return; }
+      staff.holidayBase = v;
+      saveState();
+      renderCalendar();
+      renderSidebar();
+      checkAndRenderViolations();
+    });
+  });
+}
+
+/* ===== ドラッグ選択ハンドラ ===== */
+function onCellMouseDown(e) {
+  if (e.button !== 0) return; // 左クリックのみ
+  e.preventDefault();
+  const cell = e.currentTarget;
+  const row = parseInt(cell.dataset.rowIndex);
+  const day = parseInt(cell.dataset.day);
+  isDragging = true;
+  dragStart = { row, day };
+  dragEnd = { row, day };
+  selectedCells.clear();
+  selectedCells.add(`${row}_${day}`);
+  updateSelectionUI();
+}
+
+function onCellMouseEnter(e) {
+  if (!isDragging) return;
+  const cell = e.currentTarget;
+  dragEnd = {
+    row: parseInt(cell.dataset.rowIndex),
+    day: parseInt(cell.dataset.day),
+  };
+  updateSelectionFromDrag();
+}
+
+function onDocumentMouseUp(e) {
+  if (!isDragging) return;
+  isDragging = false;
+
+  const wasSingleClick = dragStart && dragEnd &&
+    dragStart.row === dragEnd.row && dragStart.day === dragEnd.day;
+
+  if (currentMode !== null) {
+    applyModeToSelection(wasSingleClick);
+    clearSelection();
+  } else if (wasSingleClick) {
+    // モードなし＆単セル → ピッカー表示
+    const cell = document.querySelector(`.cell[data-row-index="${dragStart.row}"][data-day="${dragStart.day}"]`);
+    if (cell) {
+      const staff = orderedStaffCache[dragStart.row];
+      if (staff) openCellPicker(cell, staff.id, dragStart.day);
+    }
+    clearSelection();
+  }
+  // 複数セル選択&モードなし → 選択状態保持（Delete待ち）
+  dragStart = null;
+  dragEnd = null;
+}
+
+function updateSelectionFromDrag() {
+  if (!dragStart || !dragEnd) return;
+  selectedCells.clear();
+  const r1 = Math.min(dragStart.row, dragEnd.row);
+  const r2 = Math.max(dragStart.row, dragEnd.row);
+  const d1 = Math.min(dragStart.day, dragEnd.day);
+  const d2 = Math.max(dragStart.day, dragEnd.day);
+  for (let r = r1; r <= r2; r++) {
+    for (let d = d1; d <= d2; d++) {
+      selectedCells.add(`${r}_${d}`);
+    }
+  }
+  updateSelectionUI();
+}
+
+function updateSelectionUI() {
+  document.querySelectorAll('.cell.cell-selected').forEach(el => el.classList.remove('cell-selected'));
+  selectedCells.forEach(key => {
+    const [row, day] = key.split('_');
+    const el = document.querySelector(`.cell[data-row-index="${row}"][data-day="${day}"]`);
+    if (el) el.classList.add('cell-selected');
+  });
+}
+
+function clearSelection() {
+  selectedCells.clear();
+  updateSelectionUI();
+}
+
+function applyModeToSelection(isSingleClick) {
+  if (isSingleClick) {
+    // 単セルクリック：トグル動作
+    const key = Array.from(selectedCells)[0];
+    if (!key) return;
+    const [row, day] = key.split('_').map(Number);
+    const staff = orderedStaffCache[row];
+    if (!staff) return;
+    const current = getShift(staff.id, day);
+    if (current === currentMode) {
+      // 同じ属性 → 消去
+      setShift(staff.id, day, '');
+    } else {
+      setShift(staff.id, day, currentMode);
+    }
+  } else {
+    // 複数セル：全部currentModeに上書き（消去モード=''なら全部クリア）
+    selectedCells.forEach(key => {
+      const [row, day] = key.split('_').map(Number);
+      const staff = orderedStaffCache[row];
+      if (!staff) return;
+      setShift(staff.id, day, currentMode);
+    });
+  }
+  saveState();
+  renderCalendar();
+  checkAndRenderViolations();
+}
+
+/* ===== モード管理 ===== */
+function setMode(mode) {
+  if (currentMode === mode) {
+    currentMode = null; // 同じモードを再クリック → 解除
+  } else {
+    currentMode = mode;
+  }
+  clearSelection();
+  updateModeBar();
+  renderLegend();
+}
+
+function updateModeBar() {
+  const bar = document.getElementById('mode-bar');
+  if (currentMode === null) {
+    bar.classList.add('hidden');
+    return;
+  }
+  bar.classList.remove('hidden');
+  let label, hint;
+  if (currentMode === '') {
+    label = '消去';
+    hint = 'クリックでセル消去・ドラッグで範囲一括消去';
+  } else {
+    const def = SHIFT_TYPES[currentMode];
+    label = def.label;
+    hint = `クリックで「${def.label}」入力・同じセル再クリックで消去・ドラッグで範囲一括入力`;
+  }
+  bar.innerHTML = `
+    <span class="mode-bar-label">📝 入力モード: ${escapeHtml(label)}</span>
+    <span class="mode-bar-hint">${escapeHtml(hint)}</span>
+    <button class="mode-bar-exit" id="exit-mode-btn">解除 (ESC)</button>
+  `;
+  document.getElementById('exit-mode-btn').addEventListener('click', () => setMode(null));
+}
+
+/* ===== 凡例描画（モード切替UI） ===== */
+function renderLegend() {
+  const legend = document.getElementById('legend');
+  const modes = [
+    { mode: 'work',     label: '出勤',         color: '#DBEAFE', borderStyle: '' },
+    { mode: 'off',      label: '休み',         color: '#FFFFFF', borderStyle: '' },
+    { mode: 'holiday',  label: '希望休（確定）', color: '#FCE7F3', borderStyle: '' },
+    { mode: 'required', label: '必須出勤（確定）', color: '#2563EB', borderStyle: '' },
+    { mode: 'training', label: '研修',         color: '#FEF3C7', borderStyle: '' },
+    { mode: '',         label: '消去',         color: '#FFFFFF', borderStyle: 'border:1px dashed #9CA3AF' },
+  ];
+
+  let html = '<span class="legend-hint">クリックで入力モード:</span>';
+  modes.forEach(m => {
+    const active = currentMode === m.mode;
+    const swatch = `<span class="legend-swatch" style="background:${m.color};${m.borderStyle}"></span>`;
+    html += `<button type="button" class="legend-item ${active ? 'active' : ''}" data-mode="${m.mode}">${swatch}${escapeHtml(m.label)}</button>`;
+  });
+  html += `<span class="legend-item legend-violation" style="margin-left:8px;"><span class="legend-swatch" style="background:#FFF;outline:2px solid #DC2626;outline-offset:-2px"></span>違反</span>`;
+  legend.innerHTML = html;
+
+  legend.querySelectorAll('.legend-item[data-mode]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      setMode(btn.dataset.mode);
+    });
+  });
+}
+
+/* ===== セル種別ピッカー ===== */
+function openCellPicker(cellEl, staffId, day) {
+  // 既存ピッカーを閉じる
+  document.querySelectorAll('.cell-picker').forEach(p => p.remove());
+
+  const current = getShift(staffId, day);
+  const picker = document.createElement('div');
+  picker.className = 'cell-picker';
+  picker.innerHTML = `
+    <button class="cell-picker-option" data-type=""><span class="cell-picker-swatch" style="background:#FFF"></span>未設定</button>
+    <button class="cell-picker-option" data-type="work"><span class="cell-picker-swatch" style="background:#DBEAFE"></span>出勤</button>
+    <button class="cell-picker-option" data-type="off"><span class="cell-picker-swatch" style="background:#FFF"></span>休み</button>
+    <button class="cell-picker-option" data-type="holiday"><span class="cell-picker-swatch" style="background:#FCE7F3"></span>希望休 🔒</button>
+    <button class="cell-picker-option" data-type="required"><span class="cell-picker-swatch" style="background:#2563EB"></span>必須出勤 🔒</button>
+    <button class="cell-picker-option" data-type="training"><span class="cell-picker-swatch" style="background:#FEF3C7"></span>研修</button>
+  `;
+
+  document.body.appendChild(picker);
+
+  const rect = cellEl.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  let left = rect.left;
+  // 画面外回避
+  const ph = picker.offsetHeight;
+  const pw = picker.offsetWidth;
+  if (top + ph > window.innerHeight) top = rect.top - ph - 4;
+  if (left + pw > window.innerWidth) left = window.innerWidth - pw - 8;
+  picker.style.top = top + 'px';
+  picker.style.left = left + 'px';
+
+  // 現在の選択を強調
+  picker.querySelectorAll('.cell-picker-option').forEach(btn => {
+    if (btn.dataset.type === current) {
+      btn.style.background = '#EFF6FF';
+      btn.style.fontWeight = '700';
+    }
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setShift(staffId, day, btn.dataset.type);
+      saveState();
+      picker.remove();
+      renderCalendar();
+      checkAndRenderViolations();
+    });
+  });
+
+  // 外クリックで閉じる
+  setTimeout(() => {
+    const handler = (e) => {
+      if (!picker.contains(e.target)) {
+        picker.remove();
+        document.removeEventListener('click', handler);
+      }
+    };
+    document.addEventListener('click', handler);
+  }, 0);
+}
+
+</script>
+<script>
+/* ===== 違反検出 ===== */
+function detectViolations() {
+  const violations = [];
+  const ym = state.currentMonth;
+  const days = daysInMonth(ym);
+  const md = state.months[ym];
+
+  // 1. 4連勤以上チェック（全員、isOnSiteベース）
+  state.staff.forEach(s => {
+    let streak = 0;
+    let streakStart = 0;
+    for (let d = 1; d <= days + 1; d++) {
+      const isWork = d <= days && isOnSite(s.id, d);
+      if (isWork) {
+        if (streak === 0) streakStart = d;
+        streak++;
+      } else {
+        if (streak >= 4) {
+          violations.push({
+            type: 'consecutive',
+            staffId: s.id,
+            staffName: s.name,
+            days: range(streakStart, streakStart + streak - 1),
+            message: `${s.name} ${streakStart}日〜${streakStart + streak - 1}日（${streak}連勤）`,
+          });
+        }
+        streak = 0;
+      }
+    }
+  });
+
+  // 2. 週2休未満チェック（日〜土の暦週、月をまたぐ週は当月分のみで判定）
+  state.staff.forEach(s => {
+    // 各日が属する週の最初の日曜日を割り当て
+    const weeks = {}; // key: 日付（日曜の日付、月外なら負/超過の仮想インデックス）, value: { workDays, offDays, days[] }
+    for (let d = 1; d <= days; d++) {
+      const dow = dayOfWeek(ym, d);
+      const sundayDay = d - dow; // この週の日曜日（当月内かもしれないし負かも）
+      const wkey = sundayDay; // 同月内
+      if (!weeks[wkey]) weeks[wkey] = { holidays: 0, days: [] };
+      const t = getShift(s.id, d);
+      const def = SHIFT_TYPES[t];
+      if (def && def.countAsHoliday) weeks[wkey].holidays++;
+      weeks[wkey].days.push(d);
+    }
+    Object.keys(weeks).forEach(k => {
+      const w = weeks[k];
+      // 1週間まるごと当月にある週だけチェック（7日揃ってる）
+      if (w.days.length < 7) return;
+      if (w.holidays < 2) {
+        violations.push({
+          type: 'week_holiday',
+          staffId: s.id,
+          staffName: s.name,
+          days: w.days,
+          message: `${s.name} ${w.days[0]}日週（${w.holidays}日休 < 2日）`,
+        });
+      }
+    });
+  });
+
+  // 3. 日別現場人数不足
+  for (let d = 1; d <= days; d++) {
+    const req = md.requiredStaff[d - 1] || 0;
+    let onSite = 0;
+    state.staff.forEach(s => {
+      if (isOnSite(s.id, d)) onSite++;
+    });
+    if (req > 0 && onSite < req) {
+      violations.push({
+        type: 'understaffed',
+        day: d,
+        message: `${d}日 現場人数不足（必要${req}・実${onSite}）`,
+      });
+    }
+    // 社員必要人数
+    const reqEmp = state.minEmployees || 0;
+    if (reqEmp > 0) {
+      let onSiteEmp = 0;
+      state.staff.forEach(s => {
+        if (s.category === '社員' && isOnSite(s.id, d)) onSiteEmp++;
+      });
+      if (onSiteEmp < reqEmp) {
+        violations.push({
+          type: 'employee_short',
+          day: d,
+          message: `${d}日 社員不足（必要${reqEmp}・実${onSiteEmp}）`,
+        });
+      }
+    }
+  }
+
+  // 4. 月休日数の不一致（不足＝出勤過多、超過＝出勤不足。どちらも違反）
+  state.staff.forEach(s => {
+    const expected = s.holidayBase;
+    const actual = countActualHolidays(s.id, days);
+    if (actual < expected) {
+      violations.push({
+        type: 'holiday_mismatch',
+        staffId: s.id,
+        staffName: s.name,
+        message: `${s.name} 月休日数不足 ${actual} < 規定 ${expected}（出勤数が規定より多い）`,
+      });
+    } else if (actual > expected) {
+      violations.push({
+        type: 'holiday_mismatch',
+        staffId: s.id,
+        staffName: s.name,
+        message: `${s.name} 月休日数超過 ${actual} > 規定 ${expected}（出勤数が規定より少ない）`,
+      });
+    }
+  });
+
+  // 5. グループ同日休み
+  state.groups.forEach(g => {
+    const members = state.staff.filter(s => s.groupId === g.id);
+    if (members.length < 2) return;
+    for (let d = 1; d <= days; d++) {
+      const offMembers = members.filter(s => {
+        const t = getShift(s.id, d);
+        const def = SHIFT_TYPES[t];
+        return def && def.countAsHoliday;
+      });
+      if (offMembers.length >= 2) {
+        violations.push({
+          type: 'group_overlap',
+          groupId: g.id,
+          day: d,
+          staffIds: offMembers.map(s => s.id),
+          message: `グループ${g.name} 同日休 ${d}日（${offMembers.map(s => s.name).join('・')}）`,
+        });
+      }
+    }
+  });
+
+  return violations;
+}
+
+function isWorkDay(staffId, day) {
+  const t = getShift(staffId, day);
+  const def = SHIFT_TYPES[t];
+  return def && def.countAsWork;
+}
+
+function range(a, b) {
+  const arr = [];
+  for (let i = a; i <= b; i++) arr.push(i);
+  return arr;
+}
+
+/* ===== 違反描画 ===== */
+function checkAndRenderViolations() {
+  const container = document.getElementById('violations');
+
+  // 既存の赤枠を全クリア
+  document.querySelectorAll('.cell.cell-violation').forEach(c => c.classList.remove('cell-violation'));
+  document.querySelectorAll('.req-cell-violation').forEach(c => c.classList.remove('req-cell-violation'));
+
+  // 生成前は違反非表示（パネルも赤枠も）
+  if (!isMonthGenerated()) {
+    container.classList.add('hidden');
+    return;
+  }
+
+  const violations = detectViolations();
+  const list = document.getElementById('violations-list');
+  const header = document.getElementById('violations-header');
+
+  if (violations.length === 0) {
+    container.classList.add('hidden');
+  } else {
+    container.classList.remove('hidden');
+    header.textContent = `⚠ 違反 ${violations.length}件`;
+    list.innerHTML = violations.map(v =>
+      `<div class="violation-item">${escapeHtml(v.message)}</div>`
+    ).join('');
+  }
+
+  violations.forEach(v => {
+    if (v.type === 'consecutive' && v.staffId && v.days) {
+      v.days.forEach(d => {
+        const el = document.querySelector(`.cell[data-staff-id="${v.staffId}"][data-day="${d}"]`);
+        if (el) el.classList.add('cell-violation');
+      });
+    } else if (v.type === 'group_overlap' && v.day && v.staffIds) {
+      v.staffIds.forEach(sid => {
+        const el = document.querySelector(`.cell[data-staff-id="${sid}"][data-day="${v.day}"]`);
+        if (el) el.classList.add('cell-violation');
+      });
+    } else if (v.type === 'week_holiday' && v.staffId && v.days) {
+      v.days.forEach(d => {
+        const el = document.querySelector(`.cell[data-staff-id="${v.staffId}"][data-day="${d}"]`);
+        if (el) el.classList.add('cell-violation');
+      });
+    }
+    // 'understaffed' は出勤数集計行で赤くなるだけ。必要人数行は触らない
+  });
+}
+
+</script>
+<script>
+/* ===== シフト自動生成 ===== */
+async function generateShifts() {
+  const ym = state.currentMonth;
+  const days = daysInMonth(ym);
+  const md = state.months[ym];
+  if (!md.requiredEmployee) md.requiredEmployee = new Array(days).fill(0);
+
+  if (state.staff.length === 0) {
+    showToast('スタッフを追加してください');
+    return;
+  }
+
+  // ロック系セルのスナップショット
+  const lockedSnapshot = {};
+  state.staff.forEach(s => {
+    for (let d = 1; d <= days; d++) {
+      const t = getShift(s.id, d);
+      const def = SHIFT_TYPES[t];
+      if (def && (def.locked || t === 'training')) {
+        lockedSnapshot[`${s.id}_${d}`] = t;
+      }
+    }
+  });
+
+  // ローディング表示
+  showLoading('シフト生成中…', '試行回数: 0 / 最良スコア: -');
+
+  // ブラウザのUIスレッドを開放しながら試行
+  let bestShifts = null;
+  let bestScore = Infinity;
+  let bestAttempt = 0;
+  let stagnantCount = 0;
+
+  const MAX_ATTEMPTS = 500;
+  const STAGNANT_LIMIT = 60; // 直近 N 回改善なしで終了
+  const BATCH_SIZE = 8;      // バッチごとに UI 更新
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // バッチ毎にUIに制御を返す
+    if (attempt % BATCH_SIZE === 1 || attempt === 1) {
+      updateLoading('シフト生成中…',
+        `試行 ${attempt} / ${MAX_ATTEMPTS}  ●  最良スコア: ${bestScore === Infinity ? '-' : bestScore}件（${bestAttempt}回目）`);
+      await sleep(0);
+    }
+
+    // 試行開始：状態リセット → ロック書き戻し
+    md.shifts = {};
+    Object.keys(lockedSnapshot).forEach(k => { md.shifts[k] = lockedSnapshot[k]; });
+
+    // 試行戦略を多様化（5パターン回す）
+    const strategy = attempt % 5;
+    runSingleGeneration(ym, days, md, strategy);
+
+    const score = calcShortageScore(days, md);
+
+    if (score < bestScore) {
+      bestScore = score;
+      bestShifts = JSON.parse(JSON.stringify(md.shifts));
+      bestAttempt = attempt;
+      stagnantCount = 0;
+    } else {
+      stagnantCount++;
+    }
+
+    // 不足ゼロなら早期終了
+    if (bestScore === 0) break;
+    // 改善が見込めなくなったら終了
+    if (stagnantCount >= STAGNANT_LIMIT) break;
+  }
+
+  // ベスト結果を採用
+  md.shifts = bestShifts;
+  md.generated = true;
+  saveState();
+  hideLoading();
+  renderAll();
+
+  if (bestScore === 0) {
+    showToast(`シフト生成完了（${bestAttempt}回目で人数制約クリア）`);
+  } else {
+    showToast(`シフト生成完了（${bestAttempt}回目がベスト・人数不足${bestScore}件残存。休数=規定ぴったり＝出勤数厳守）`, 4500);
+  }
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function showLoading(text, detail) {
+  const el = document.getElementById('loading-overlay');
+  document.getElementById('loading-text').textContent = text || '処理中…';
+  document.getElementById('loading-detail').textContent = detail || '';
+  el.classList.remove('hidden');
+}
+function updateLoading(text, detail) {
+  document.getElementById('loading-text').textContent = text || '処理中…';
+  document.getElementById('loading-detail').textContent = detail || '';
+}
+function hideLoading() {
+  document.getElementById('loading-overlay').classList.add('hidden');
+}
+
+/* 人数不足のスコアを計算（社員不足は2倍重み） */
+function calcShortageScore(days, md) {
+  let score = 0;
+  for (let d = 1; d <= days; d++) {
+    const req = md.requiredStaff[d - 1] || 0;
+    if (req > 0) {
+      let onSite = 0;
+      state.staff.forEach(s => {
+        const t = md.shifts[`${s.id}_${d}`];
+        if (!t) return;
+        const def = SHIFT_TYPES[t];
+        if (def && def.countAsWork) onSite++;
+      });
+      if (onSite < req) score += (req - onSite);
+    }
+    const reqEmp = state.minEmployees || 0;
+    if (reqEmp > 0) {
+      let onSiteEmp = 0;
+      state.staff.forEach(s => {
+        if (s.category !== '社員') return;
+        const t = md.shifts[`${s.id}_${d}`];
+        if (!t) return;
+        const def = SHIFT_TYPES[t];
+        if (def && def.countAsWork) onSiteEmp++;
+      });
+      if (onSiteEmp < reqEmp) score += (reqEmp - onSiteEmp) * 2;
+    }
+  }
+  return score;
+}
+
+/* 単一試行：第1〜4パスを順次実行（規定休数達成は絶対、人数不足は最小化）
+ * strategy: 0-4 の試行戦略番号（スタッフの並び順を変えて多様な解を探索）
+ */
+function runSingleGeneration(ym, days, md, strategy) {
+  const targets = state.staff.slice();
+
+  // ヘルパー：生成中の暫定出勤判定（未設定=出勤予定）
+  function isOnSiteGen(staffId, day) {
+    const t = md.shifts[`${staffId}_${day}`];
+    if (!t) return true; // 未設定 = 出勤予定（生成中の暫定）
+    const def = SHIFT_TYPES[t];
+    return !!(def && def.countAsWork);
+  }
+
+  // ある日の現場人数（生成中）
+  function countOnSiteGen(day, excludeStaffId) {
+    let count = 0;
+    state.staff.forEach(s => {
+      if (s.id === excludeStaffId) return;
+      if (isOnSiteGen(s.id, day)) count++;
+    });
+    return count;
+  }
+
+  function countEmployeesOnSiteGen(day, excludeStaffId) {
+    let count = 0;
+    state.staff.forEach(s => {
+      if (s.id === excludeStaffId) return;
+      if (s.category === '社員' && isOnSiteGen(s.id, day)) count++;
+    });
+    return count;
+  }
+
+  // 各対象スタッフについて: 必要な追加休数を計算
+  const needOffMap = {};
+  targets.forEach(s => {
+    let lockedHolidays = 0;
+    for (let d = 1; d <= days; d++) {
+      const t = md.shifts[`${s.id}_${d}`];
+      const def = SHIFT_TYPES[t];
+      if (def && def.countAsHoliday) lockedHolidays++;
+    }
+    needOffMap[s.id] = Math.max(0, s.holidayBase - lockedHolidays);
+  });
+
+  // 共通：休み配置不可の理由（ロック・休系・研修・グループ被り）
+  function canPlaceOffLoose(staffId, day) {
+    const cur = md.shifts[`${staffId}_${day}`];
+    if (cur) {
+      const def = SHIFT_TYPES[cur];
+      if (def && def.countAsHoliday) return false;
+      if (def && def.locked) return false;
+      if (cur === 'training') return false;
+    }
+    const staff = state.staff.find(s => s.id === staffId);
+    if (staff.groupId != null) {
+      const groupMates = state.staff.filter(s => s.groupId === staff.groupId && s.id !== staffId);
+      for (const gm of groupMates) {
+        const t = md.shifts[`${gm.id}_${day}`];
+        const def = SHIFT_TYPES[t];
+        if (def && def.countAsHoliday) return false;
+      }
+    }
+    return true;
+  }
+
+  // strict: looseに加えて人数制約・社員制約をハードに守る
+  function canPlaceOffStrict(staffId, day) {
+    if (!canPlaceOffLoose(staffId, day)) return false;
+    // 全体人数制約: 休ませた後の現場人数 >= 必要人数
+    const req = md.requiredStaff[day - 1] || 0;
+    const onSiteWithout = countOnSiteGen(day, staffId);
+    if (onSiteWithout < req) return false;
+    // 社員人数制約: 休ませる対象が社員なら、休ませた後の社員出勤数 >= 社員必要人数
+    const staff = state.staff.find(s => s.id === staffId);
+    if (staff.category === '社員') {
+      const reqEmp = state.minEmployees || 0;
+      const empWithout = countEmployeesOnSiteGen(day, staffId);
+      if (empWithout < reqEmp) return false;
+    }
+    return true;
+  }
+
+  function getConsecutiveAround(staffId, day) {
+    let before = 0;
+    for (let d = day - 1; d >= 1; d--) {
+      if (isWorkDayInShifts(staffId, d, md.shifts)) before++;
+      else break;
+    }
+    let after = 0;
+    for (let d = day + 1; d <= days; d++) {
+      if (isWorkDayInShifts(staffId, d, md.shifts)) after++;
+      else break;
+    }
+    return { before, after, total: before + 1 + after };
+  }
+
+  // 試行戦略によってスタッフ並び順を変える（局所最適解から脱出）
+  let sortedTargets;
+  switch (strategy) {
+    case 0:
+      // 残り休数多い順 + 同点ランダム
+      sortedTargets = [...targets].sort((a, b) =>
+        (needOffMap[b.id] - needOffMap[a.id]) || (Math.random() - 0.5));
+      break;
+    case 1:
+      // 残り休数少ない順 + 同点ランダム
+      sortedTargets = [...targets].sort((a, b) =>
+        (needOffMap[a.id] - needOffMap[b.id]) || (Math.random() - 0.5));
+      break;
+    case 2:
+      // 完全ランダム
+      sortedTargets = [...targets].sort(() => Math.random() - 0.5);
+      break;
+    case 3:
+      // グループ所属者を先に（制約厳しい人優先）
+      sortedTargets = [...targets].sort((a, b) => {
+        const ag = a.groupId != null ? 0 : 1;
+        const bg = b.groupId != null ? 0 : 1;
+        return (ag - bg) || (needOffMap[b.id] - needOffMap[a.id]) || (Math.random() - 0.5);
+      });
+      break;
+    case 4:
+      // 社員を先に（社員必要人数の制約厳しい）
+      sortedTargets = [...targets].sort((a, b) => {
+        const ae = a.category === '社員' ? 0 : 1;
+        const be = b.category === '社員' ? 0 : 1;
+        return (ae - be) || (needOffMap[b.id] - needOffMap[a.id]) || (Math.random() - 0.5);
+      });
+      break;
+    default:
+      sortedTargets = [...targets].sort(() => Math.random() - 0.5);
+  }
+
+  /* ===== 第一パス: strict（人数・社員制約を守って配置） ===== */
+  for (const s of sortedTargets) {
+    let remaining = needOffMap[s.id];
+    if (remaining <= 0) continue;
+
+    while (remaining > 0) {
+      const candidates = [];
+      for (let d = 1; d <= days; d++) {
+        if (!canPlaceOffStrict(s.id, d)) continue;
+
+        let score = 0;
+        // 人数余裕度（プラスが大きい日を優先）
+        const req = md.requiredStaff[d - 1] || 0;
+        const onSite = countOnSiteGen(d, s.id);
+        const slack = onSite - req;
+        score += slack * 5;
+
+        // 4連勤回避
+        const consec = getConsecutiveAround(s.id, d);
+        if (consec.total >= 4) score += 1000;
+        else if (consec.total === 3) score += 10;
+
+        // 週2休未満なら強くプラス
+        const weekHolidays = countWeekHolidays(s.id, d, days, ym, md.shifts);
+        if (weekHolidays < 2) score += 30;
+
+        // 試行ごとのばらつき用（強めの乱数）
+        score += Math.random() * 3;
+        candidates.push({ day: d, score });
+      }
+      if (candidates.length === 0) break;
+      candidates.sort((a, b) => b.score - a.score);
+      md.shifts[`${s.id}_${candidates[0].day}`] = 'off';
+      remaining--;
+    }
+  }
+
+  /* ===== 第二パス: loose（人数余裕を優先しつつ規定休数達成） ===== */
+  for (const s of sortedTargets) {
+    while (true) {
+      let placedHolidays = 0;
+      for (let d = 1; d <= days; d++) {
+        const t = md.shifts[`${s.id}_${d}`];
+        const def = SHIFT_TYPES[t];
+        if (def && def.countAsHoliday) placedHolidays++;
+      }
+      if (placedHolidays >= s.holidayBase) break;
+
+      const candidates = [];
+      for (let d = 1; d <= days; d++) {
+        if (!canPlaceOffLoose(s.id, d)) continue;
+        // 人数余裕度
+        const req = md.requiredStaff[d - 1] || 0;
+        const onSiteWithout = countOnSiteGen(d, s.id);
+        const slack = onSiteWithout - req;
+        // 社員余裕度
+        let empSlack = 999;
+        if (s.category === '社員') {
+          const reqEmp = state.minEmployees || 0;
+          const empWithout = countEmployeesOnSiteGen(d, s.id);
+          empSlack = empWithout - reqEmp;
+        }
+        const consec = getConsecutiveAround(s.id, d);
+        candidates.push({ d, slack, empSlack, total: consec.total });
+      }
+      if (candidates.length === 0) break;
+      // 1. 両方の余裕がプラス(=人数不足を作らない)を優先
+      // 2. 余裕の最小値が大きい方優先
+      // 3. 連勤が長いところ優先
+      candidates.sort((a, b) => {
+        const aMin = Math.min(a.slack, a.empSlack);
+        const bMin = Math.min(b.slack, b.empSlack);
+        // 両者ともプラスなら、連勤長 + 余裕 + 乱数で比較
+        if (aMin >= 0 && bMin >= 0) {
+          // スコアで比較（乱数大きめ）
+          const aScore = a.total * 2 + aMin + Math.random() * 2;
+          const bScore = b.total * 2 + bMin + Math.random() * 2;
+          return bScore - aScore;
+        }
+        // プラス/マイナスの違いで優先
+        return bMin - aMin;
+      });
+      md.shifts[`${s.id}_${candidates[0].d}`] = 'off';
+    }
+
+    // ★強制パス: それでも規定休数に届かない場合、グループ被りを許容してでも配置する
+    // （出勤数=規定ぴったりを絶対優先。被りは違反パネルに表示される）
+    let forcedCount = 0;
+    for (let d = 1; d <= days; d++) {
+      const t = md.shifts[`${s.id}_${d}`];
+      const def = SHIFT_TYPES[t];
+      if (def && def.countAsHoliday) forcedCount++;
+    }
+    while (forcedCount < s.holidayBase) {
+      let placedDay = -1;
+      let bestSlack = -Infinity;
+      for (let d = 1; d <= days; d++) {
+        const cur = md.shifts[`${s.id}_${d}`];
+        if (cur) {
+          const def = SHIFT_TYPES[cur];
+          if (def && (def.countAsHoliday || def.locked)) continue;
+          if (cur === 'training') continue;
+        }
+        // 人数余裕が最も大きい日を選ぶ（被害最小化）
+        const slack = countOnSiteGen(d, s.id) - (md.requiredStaff[d - 1] || 0);
+        if (slack > bestSlack) { bestSlack = slack; placedDay = d; }
+      }
+      if (placedDay === -1) break; // 希望休・研修等で全日埋まっており物理的に不可能
+      md.shifts[`${s.id}_${placedDay}`] = 'off';
+      forcedCount++;
+    }
+  }
+
+  /* ===== 第三パス: 4連勤修復 ===== */
+  function findStreaks(staffId) {
+    const streaks = [];
+    let current = [];
+    for (let d = 1; d <= days + 1; d++) {
+      const isWork = d <= days && isWorkDayInShifts(staffId, d, md.shifts);
+      if (isWork) current.push(d);
+      else {
+        if (current.length > 0) streaks.push(current);
+        current = [];
+      }
+    }
+    return streaks;
+  }
+
+  // 長い連勤（4日以上）の総日数。減れば改善とみなす
+  function countLongStreakDays(staffId) {
+    return findStreaks(staffId)
+      .filter(st => st.length >= 4)
+      .reduce((sum, st) => sum + st.length, 0);
+  }
+
+  // ★休数を増やさないため、「追加」ではなく既配置の 'off' を「移動」して解消する
+  for (const s of targets) {
+    let iter = 0;
+    while (iter < 100) {
+      const streaks = findStreaks(s.id);
+      const longStreaks = streaks.filter(st => st.length >= 4);
+      if (longStreaks.length === 0) break;
+      longStreaks.sort((a, b) => b.length - a.length);
+      const targetStreak = longStreaks[0];
+      const center = Math.floor(targetStreak.length / 2);
+      const tryOrder = [targetStreak[center]];
+      for (let off = 1; off < targetStreak.length; off++) {
+        const left = center - off;
+        const right = center + off;
+        if (left >= 0) tryOrder.push(targetStreak[left]);
+        if (right < targetStreak.length) tryOrder.push(targetStreak[right]);
+      }
+
+      // 移動元候補: 自動配置された 'off'（希望休などロック休は動かせない）
+      const donorDays = [];
+      for (let d2 = 1; d2 <= days; d2++) {
+        if (md.shifts[`${s.id}_${d2}`] === 'off') donorDays.push(d2);
+      }
+
+      const before = countLongStreakDays(s.id);
+      let moved = false;
+      outerMove: for (const d of tryOrder) {
+        if (!canPlaceOffLoose(s.id, d)) continue;
+        for (const d2 of donorDays) {
+          if (d2 === d) continue;
+          // 仮移動: d2 の off を d へ（d2 は未設定=出勤予定に戻す）
+          delete md.shifts[`${s.id}_${d2}`];
+          md.shifts[`${s.id}_${d}`] = 'off';
+          if (countLongStreakDays(s.id) < before) { moved = true; break outerMove; }
+          // 改善しなければ戻す
+          delete md.shifts[`${s.id}_${d}`];
+          md.shifts[`${s.id}_${d2}`] = 'off';
+        }
+      }
+      if (!moved) break; // 移動では解消不能（休数厳守を優先し、連勤は許容）
+      iter++;
+    }
+  }
+
+  // 残り未設定セルを 'work' に確定（全カテゴリ）
+  state.staff.forEach(s => {
+    for (let d = 1; d <= days; d++) {
+      const key = `${s.id}_${d}`;
+      if (!md.shifts[key]) md.shifts[key] = 'work';
+    }
+  });
+
+  /* ===== 第四パス: 人数不足修復スワップ（強化版） ===== */
+  // 確定後の現場判定
+  function isOnSiteAfter(staffId, day) {
+    const t = md.shifts[`${staffId}_${day}`];
+    if (!t) return false;
+    const def = SHIFT_TYPES[t];
+    return !!(def && def.countAsWork);
+  }
+
+  function countOnSiteAfter(day, excludeId) {
+    let n = 0;
+    state.staff.forEach(s => {
+      if (s.id === excludeId) return;
+      if (isOnSiteAfter(s.id, day)) n++;
+    });
+    return n;
+  }
+
+  function countEmpOnSiteAfter(day, excludeId) {
+    let n = 0;
+    state.staff.forEach(s => {
+      if (s.id === excludeId) return;
+      if (s.category === '社員' && isOnSiteAfter(s.id, day)) n++;
+    });
+    return n;
+  }
+
+  function findUnderstaffed() {
+    for (let d = 1; d <= days; d++) {
+      const req = md.requiredStaff[d - 1] || 0;
+      if (req > 0) {
+        const onSite = countOnSiteAfter(d, -1);
+        if (onSite < req) return { day: d, type: 'total', shortage: req - onSite };
+      }
+      const reqEmp = state.minEmployees || 0;
+      if (reqEmp > 0) {
+        const onSiteEmp = countEmpOnSiteAfter(d, -1);
+        if (onSiteEmp < reqEmp) return { day: d, type: 'employee', shortage: reqEmp - onSiteEmp };
+      }
+    }
+    return null;
+  }
+
+  function createsConsecutive4(staffId) {
+    let streak = 0;
+    for (let d = 1; d <= days; d++) {
+      if (isOnSiteAfter(staffId, d)) {
+        streak++;
+        if (streak >= 4) return true;
+      } else streak = 0;
+    }
+    return false;
+  }
+
+  // 4連勤修復（第四パス後の後追い）
+  function repairConsecutive4() {
+    for (const s of targets) {
+      let iter = 0;
+      while (iter < 50) {
+        // 連勤を見つける
+        let streakStart = -1;
+        let longestStreak = null;
+        let longestLen = 0;
+        let curStart = -1, curLen = 0;
+        for (let d = 1; d <= days + 1; d++) {
+          const isWork = d <= days && isOnSiteAfter(s.id, d);
+          if (isWork) {
+            if (curLen === 0) curStart = d;
+            curLen++;
+          } else {
+            if (curLen > longestLen) {
+              longestLen = curLen;
+              streakStart = curStart;
+            }
+            curLen = 0;
+          }
+        }
+        if (longestLen < 4) break;
+
+        // 中央付近を休みに変える
+        const center = streakStart + Math.floor(longestLen / 2);
+        const tryDays = [center];
+        for (let off = 1; off < longestLen; off++) {
+          if (center - off >= streakStart) tryDays.push(center - off);
+          if (center + off < streakStart + longestLen) tryDays.push(center + off);
+        }
+        // ★中央付近を休みに変え、代わりに既存の 'off' を1日出勤へ戻す（休数不変スワップ）
+        function longStreakDaysAfter(staffId) {
+          let total = 0, streak = 0;
+          for (let dd = 1; dd <= days + 1; dd++) {
+            const w = dd <= days && isOnSiteAfter(staffId, dd);
+            if (w) streak++;
+            else { if (streak >= 4) total += streak; streak = 0; }
+          }
+          return total;
+        }
+        const beforeTotal = longStreakDaysAfter(s.id);
+        let placed = false;
+        outerRepair: for (const d of tryDays) {
+          const cur = md.shifts[`${s.id}_${d}`];
+          if (cur !== 'work') continue; // 触れるのは確定出勤のみ
+          // グループ被りチェック
+          if (s.groupId != null) {
+            const overlap = state.staff.some(other => {
+              if (other.id === s.id || other.groupId !== s.groupId) return false;
+              const t = md.shifts[`${other.id}_${d}`];
+              const def = SHIFT_TYPES[t];
+              return def && def.countAsHoliday;
+            });
+            if (overlap) continue;
+          }
+          // 移動元: 自動配置の 'off' を探してスワップ
+          for (let d2 = 1; d2 <= days; d2++) {
+            if (d2 === d) continue;
+            if (md.shifts[`${s.id}_${d2}`] !== 'off') continue;
+            md.shifts[`${s.id}_${d}`] = 'off';
+            md.shifts[`${s.id}_${d2}`] = 'work';
+            if (longStreakDaysAfter(s.id) < beforeTotal) {
+              placed = true;
+              break outerRepair;
+            }
+            // 改善しなければ戻す
+            md.shifts[`${s.id}_${d}`] = 'work';
+            md.shifts[`${s.id}_${d2}`] = 'off';
+          }
+        }
+        if (!placed) break;
+        iter++;
+      }
+    }
+  }
+
+  let swapRound = 0;
+  const MAX_ROUNDS = 5;
+  while (swapRound < MAX_ROUNDS) {
+    let totalSwaps = 0;
+    let swapIter = 0;
+    const MAX_SWAP = 2000;
+
+    while (swapIter < MAX_SWAP) {
+      const issue = findUnderstaffed();
+      if (!issue) break;
+      const { day, type } = issue;
+
+      // その日 'off' のスタッフ
+      const candidates = targets.filter(s => {
+        if (md.shifts[`${s.id}_${day}`] !== 'off') return false;
+        if (type === 'employee' && s.category !== '社員') return false;
+        return true;
+      });
+      if (candidates.length === 0) break;
+
+      // 軽くランダム化
+      candidates.sort(() => Math.random() - 0.5);
+
+      let swapped = false;
+      outer: for (const s of candidates) {
+        // スワップ先 d2 の候補を構築（s が work の日）
+        const d2Candidates = [];
+        for (let d2 = 1; d2 <= days; d2++) {
+          if (d2 === day) continue;
+          if (md.shifts[`${s.id}_${d2}`] !== 'work') continue;
+
+          // d2 で s を休ませた場合の余裕度を計算
+          const req2 = md.requiredStaff[d2 - 1] || 0;
+          const onSite2 = countOnSiteAfter(d2, s.id);
+          const slack2 = onSite2 - req2;
+          if (slack2 < 0) continue;
+
+          // 社員制約
+          if (s.category === '社員') {
+            const reqEmp2 = state.minEmployees || 0;
+            if (reqEmp2 > 0) {
+              const onSiteEmp2 = countEmpOnSiteAfter(d2, s.id);
+              if (onSiteEmp2 < reqEmp2) continue;
+            }
+          }
+
+          // グループ被り
+          if (s.groupId != null) {
+            const overlap = state.staff.some(other => {
+              if (other.id === s.id || other.groupId !== s.groupId) return false;
+              const t = md.shifts[`${other.id}_${d2}`];
+              const def = SHIFT_TYPES[t];
+              return def && def.countAsHoliday;
+            });
+            if (overlap) continue;
+          }
+
+          d2Candidates.push({ d2, slack: slack2 });
+        }
+
+        // 余裕の多い日を優先
+        d2Candidates.sort((a, b) => b.slack - a.slack || (Math.random() - 0.5));
+
+        for (const { d2 } of d2Candidates) {
+          // スワップ仮実行 → 4連勤チェック
+          const oldA = md.shifts[`${s.id}_${day}`];
+          const oldB = md.shifts[`${s.id}_${d2}`];
+          md.shifts[`${s.id}_${day}`] = 'work';
+          md.shifts[`${s.id}_${d2}`] = 'off';
+          if (createsConsecutive4(s.id)) {
+            md.shifts[`${s.id}_${day}`] = oldA;
+            md.shifts[`${s.id}_${d2}`] = oldB;
+            continue;
+          }
+          swapped = true;
+          break outer;
+        }
+      }
+      if (!swapped) break;
+      swapIter++;
+      totalSwaps++;
+    }
+
+    if (totalSwaps === 0) break; // 何も改善できなかったので終了
+
+    // スワップで4連勤になった可能性 → 修復
+    repairConsecutive4();
+    swapRound++;
+  }
+
+  // 最終 4連勤修復（規定休数を下回らせない範囲で）
+  repairConsecutive4();
+
+  // 注: 規定休数達成が絶対優先のため、強制 off→work 変換は行わない。
+  // 残った人数不足は違反パネルで表示される。
+}
+
+function isWorkDayInShifts(staffId, day, shifts) {
+  const t = shifts[`${staffId}_${day}`];
+  const def = SHIFT_TYPES[t || 'work'];
+  if (!t) return true; // 未設定は仮想的に出勤
+  return def && def.countAsWork;
+}
+
+function countWeekHolidays(staffId, refDay, days, ym, shifts) {
+  // refDayを含む週（日〜土）の休数
+  const dow = dayOfWeek(ym, refDay);
+  const sundayDay = refDay - dow;
+  let count = 0;
+  for (let off = 0; off < 7; off++) {
+    const d = sundayDay + off;
+    if (d < 1 || d > days) continue;
+    const t = shifts[`${staffId}_${d}`];
+    const def = SHIFT_TYPES[t];
+    if (def && def.countAsHoliday) count++;
+  }
+  return count;
+}
+
+</script>
+<script>
+/* ===== Excel出力（テンプレートに流し込み） ===== */
+// xlsx-js-style をダイナミックロード（SheetJSのfork、スタイル書き出し対応）
+let xlsxLoaded = false;
+
+function ensureSheetJS() {
+  return new Promise((resolve, reject) => {
+    if (xlsxLoaded && typeof XLSX !== 'undefined') return resolve();
+    if (typeof XLSX !== 'undefined') { xlsxLoaded = true; return resolve(); }
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+    script.onload = () => { xlsxLoaded = true; resolve(); };
+    script.onerror = () => reject(new Error('Excelライブラリ読み込み失敗（オフライン時は初回のみネット接続が必要です）'));
+    document.head.appendChild(script);
+  });
+}
+
+/* ===== Excelテンプレート保存（IndexedDB） ===== */
+// localStorage では容量制限（5-10MB）に当たりやすいので IndexedDB を使用
+async function getStoredTemplate() {
+  try {
+    const db = await openHandleDB();
+    return await new Promise((resolve) => {
+      const tx = db.transaction(HANDLE_STORE, 'readonly');
+      const req = tx.objectStore(HANDLE_STORE).get('excelTemplate');
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch (e) {
+    console.error('テンプレ取得失敗:', e);
+    return null;
+  }
+}
+
+async function storeTemplate(base64) {
+  const db = await openHandleDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(HANDLE_STORE, 'readwrite');
+    tx.objectStore(HANDLE_STORE).put(base64, 'excelTemplate');
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function clearStoredTemplate() {
+  try {
+    const db = await openHandleDB();
+    await new Promise((resolve) => {
+      const tx = db.transaction(HANDLE_STORE, 'readwrite');
+      tx.objectStore(HANDLE_STORE).delete('excelTemplate');
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+    });
+  } catch (e) { console.error(e); }
+}
+
+// 旧データ：localStorage に残ってる場合は IndexedDB に移行
+async function migrateTemplateIfNeeded() {
+  try {
+    const old = localStorage.getItem(STORAGE_TEMPLATE_KEY);
+    if (old) {
+      const existing = await getStoredTemplate();
+      if (!existing) {
+        await storeTemplate(old);
+        console.log('テンプレを IndexedDB に移行しました');
+      }
+      localStorage.removeItem(STORAGE_TEMPLATE_KEY);
+    }
+  } catch (e) { console.error('テンプレ移行失敗:', e); }
+}
+
+async function exportToExcel() {
+  try {
+    await ensureSheetJS();
+  } catch (e) {
+    showToast(e.message);
+    return;
+  }
+
+  const tplBase64 = await getStoredTemplate();
+  if (!tplBase64) {
+    openTemplateUploadModal();
+    return;
+  }
+
+  generateExcelFromTemplate(tplBase64);
+}
+
+function openTemplateUploadModal() {
+  showModal(`
+    <div class="modal-title">Excelテンプレートを登録</div>
+    <div style="margin-bottom:16px;font-size:13px;color:#374151;line-height:1.6;">
+      初回のみ、課長に提出する形式のExcelファイル（雛形）をアップロードしてください。<br>
+      テンプレートはブラウザに保存され、次回以降は自動で使われます。
+    </div>
+    <div class="form-row">
+      <input type="file" id="tpl-file" accept=".xlsx" class="form-input">
+    </div>
+    <div class="modal-actions">
+      <div></div>
+      <div class="modal-actions-right">
+        <button class="btn btn-secondary" id="tpl-cancel">キャンセル</button>
+        <button class="btn btn-primary" id="tpl-save">登録</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('tpl-cancel').addEventListener('click', closeModal);
+  document.getElementById('tpl-save').addEventListener('click', () => {
+    const file = document.getElementById('tpl-file').files[0];
+    if (!file) { showToast('ファイルを選択してください'); return; }
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const base64 = e.target.result.split(',')[1];
+        await storeTemplate(base64);
+        closeModal();
+        showToast('テンプレートを保存しました');
+        generateExcelFromTemplate(base64);
+      } catch (err) {
+        console.error(err);
+        showToast('テンプレ保存失敗: ' + err.message);
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function generateExcelFromTemplate(base64) {
+  try {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+    const wb = XLSX.read(bytes, { type: 'array', cellStyles: true });
+    const sheetName = wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+
+    const ym = state.currentMonth;
+    const { year, month } = parseMonth(ym);
+    const days = daysInMonth(ym);
+    const md = state.months[ym];
+
+    // グループ色（Excel用、画面より少し濃いめで識別しやすく）
+    const GROUP_FILL = {
+      a: 'FFF7DC', // amber
+      b: 'E4F8EB', // mint
+      c: 'DBEAFE', // blue
+      d: 'EDE9FE', // purple
+    };
+
+    /* セル書き込み（テンプレ既存スタイル + 明示的なスタイル指定）
+     * override: { fontColor, fillRgb, bold, fontName, alignH, alignV } を任意指定
+     * 罫線・配置・フォントは常に明示的に書き込む（xlsx-js-styleの読み込み不完全対策）
+     */
+    function writeCell(ref, value, override) {
+      const existing = ws[ref] || {};
+      const existingS = existing.s || {};
+      const cell = { t: 's', v: (value == null ? '' : String(value)) };
+
+      const s = {
+        font: Object.assign({ name: '游ゴシック', sz: 11 }, existingS.font || {}),
+        alignment: Object.assign({ horizontal: 'center', vertical: 'center' }, existingS.alignment || {}),
+        fill: existingS.fill ? Object.assign({}, existingS.fill) : undefined,
+        border: {
+          top: { style: 'thin', color: { rgb: 'BFBFBF' } },
+          bottom: { style: 'thin', color: { rgb: 'BFBFBF' } },
+          left: { style: 'thin', color: { rgb: 'BFBFBF' } },
+          right: { style: 'thin', color: { rgb: 'BFBFBF' } },
+        },
+      };
+
+      if (override) {
+        if (override.fontName) s.font.name = override.fontName;
+        if (override.bold != null) s.font.bold = override.bold;
+        if (override.fontColor) s.font.color = { rgb: override.fontColor };
+        if (override.fillRgb) {
+          s.fill = { fgColor: { rgb: override.fillRgb }, patternType: 'solid' };
+        }
+        if (override.alignH) s.alignment.horizontal = override.alignH;
+        if (override.alignV) s.alignment.vertical = override.alignV;
+      }
+
+      if (!s.fill) delete s.fill;
+      cell.s = s;
+      ws[ref] = cell;
+    }
+
+    // 値だけクリア（罫線・スタイル維持）
+    function clearCellValue(ref) {
+      writeCell(ref, '', null);
+    }
+
+    /* === 月日を A2 === */
+    const titleCell = ws['A2'] || {};
+    ws['A2'] = Object.assign({}, titleCell, { t: 'd', v: new Date(year, month - 1, 1) });
+
+    /* === スタッフ並び順（カテゴリ別） === */
+    const orderedStaff = [];
+    CATEGORIES.forEach(cat => {
+      state.staff.filter(s => s.category === cat).forEach(s => orderedStaff.push(s));
+    });
+
+    const startRow = 6; // 1-based
+    const startDayCol = 5; // E列
+    const MAX_ROWS = 20;
+
+    if (orderedStaff.length > MAX_ROWS) {
+      showToast(`警告: テンプレは${MAX_ROWS}人分。${orderedStaff.length - MAX_ROWS}人分は出力されません`);
+    }
+
+    /* === 既存スタッフ行をいったん空白セルにクリア（スタイル維持） === */
+    for (let r = startRow; r < startRow + MAX_ROWS; r++) {
+      const rowIdx = r - 1;
+      clearCellValue(XLSX.utils.encode_cell({ r: rowIdx, c: 1 }));
+      clearCellValue(XLSX.utils.encode_cell({ r: rowIdx, c: 2 }));
+      clearCellValue(XLSX.utils.encode_cell({ r: rowIdx, c: 3 }));
+      for (let dc = 0; dc < 30; dc++) {
+        clearCellValue(XLSX.utils.encode_cell({ r: rowIdx, c: startDayCol - 1 + dc }));
+      }
+    }
+
+    /* === スタッフ書き込み === */
+    orderedStaff.slice(0, MAX_ROWS).forEach((s, idx) => {
+      const rowIdx = startRow + idx - 1;
+      // グループ色（無所属はテンプレ既存fillを維持）
+      const group = state.groups.find(g => g.id === s.groupId);
+      const rowFill = group ? GROUP_FILL[group.color] : null;
+
+      // B列: 名前（太字、游ゴシック、中央揃え）
+      writeCell(XLSX.utils.encode_cell({ r: rowIdx, c: 1 }), s.name, {
+        bold: true,
+        fillRgb: rowFill || undefined,
+      });
+      // C列: 出勤時刻（Arial、中央揃え）
+      writeCell(XLSX.utils.encode_cell({ r: rowIdx, c: 2 }), formatTime(s.startHour, s.startMin), {
+        fontName: 'Arial',
+        fillRgb: rowFill || undefined,
+      });
+      // D列: 退勤時刻
+      writeCell(XLSX.utils.encode_cell({ r: rowIdx, c: 3 }), formatTime(s.endHour, s.endMin), {
+        fontName: 'Arial',
+        fillRgb: rowFill || undefined,
+      });
+
+      // E列以降: 各日のシフト
+      for (let d = 1; d <= days; d++) {
+        const t = getShift(s.id, d);
+        const def = SHIFT_TYPES[t] || SHIFT_TYPES[''];
+        const cellRef = XLSX.utils.encode_cell({ r: rowIdx, c: startDayCol - 1 + (d - 1) });
+        const override = {};
+        if (t === 'holiday') override.fontColor = 'FF0000';
+        if (rowFill) override.fillRgb = rowFill;
+        writeCell(cellRef, def.excel || '', override);
+      }
+    });
+
+    /* === ファイル出力 === */
+    const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx', cellStyles: true });
+    const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `シフト${year}年${month}月.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('Excelを出力しました');
+  } catch (e) {
+    console.error(e);
+    showToast('Excel出力エラー: ' + e.message);
+  }
+}
+
+/* ===== テンプレ再設定機能（設定リセット用） ===== */
+function resetTemplate() {
+  confirmDialog('保存済みのExcelテンプレートを削除して再登録しますか？', async () => {
+    await clearStoredTemplate();
+    showToast('テンプレートを削除しました');
+  });
+}
+
+/* ===== 設定モーダル ===== */
+async function openSettingsModal() {
+  const hasTemplate = !!(await getStoredTemplate());
+  const fsaSupported = isFileSystemAccessSupported();
+  let folderStatus;
+  if (sharedFolderHandle && !sharedFolderNeedsReauth) {
+    folderStatus = `<span style="color:#059669;font-weight:700;">✓ 同期中</span>: ${escapeHtml(sharedFolderName || '')}`;
+  } else if (sharedFolderHandle && sharedFolderNeedsReauth) {
+    folderStatus = `<span style="color:#D97706;font-weight:700;">⚠ 再承認が必要</span>: ${escapeHtml(sharedFolderName || '')}`;
+  } else {
+    folderStatus = '<span style="color:#6B7280;">未設定（このPCのブラウザにのみ保存）</span>';
+  }
+
+  showModal(`
+    <div class="modal-title">⚙ 設定</div>
+
+    <div style="margin-bottom:20px;border-bottom:1px solid #E5E7EB;padding-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:6px;">最低社員数（全日共通）</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input type="number" class="form-input" id="st-min-employees" min="0" max="99" value="${state.minEmployees || 0}" style="width:80px;">
+        <span style="font-size:12px;color:#6B7280;">人</span>
+      </div>
+      <div style="font-size:11px;color:#9CA3AF;margin-top:6px;line-height:1.6;">
+        各日の社員出勤数がこの値ぴったりになった日は、カレンダー集計行で<strong style="color:#92400E;">黄色</strong>く強調されます（=これ以上1人でも休めば不足）。<br>
+        この値未満の日は<strong style="color:#DC2626;">赤色</strong>で違反表示されます。0を設定すると判定なし。
+      </div>
+    </div>
+
+    <div style="margin-bottom:20px;border-bottom:1px solid #E5E7EB;padding-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:6px;">共有フォルダ同期</div>
+      <div id="st-folder-status" style="font-size:12px;color:#374151;margin-bottom:10px;">${folderStatus}</div>
+      ${lastSharedFolderError ? `
+        <div style="font-size:12px;background:#FEE2E2;border:1px solid #FCA5A5;color:#7F1D1D;padding:8px 10px;border-radius:4px;margin-bottom:10px;">
+          <div style="font-weight:700;margin-bottom:4px;">前回失敗: ${escapeHtml(lastSharedFolderError.name || '?')}</div>
+          <div style="font-family:ui-monospace,monospace;font-size:11px;">${escapeHtml(lastSharedFolderError.message || '(メッセージなし)')}</div>
+          ${lastSharedFolderError.hint ? `<div style="margin-top:4px;font-size:11px;">💡 ${escapeHtml(lastSharedFolderError.hint)}</div>` : ''}
+        </div>
+      ` : ''}
+      ${fsaSupported ? `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${sharedFolderHandle && sharedFolderNeedsReauth ? '<button class="btn btn-primary" id="st-folder-reauth">🔓 再承認</button>' : ''}
+          <button class="btn ${sharedFolderHandle && !sharedFolderNeedsReauth ? 'btn-secondary' : 'btn-primary'}" id="st-folder-enable">${sharedFolderHandle ? '別のフォルダに切り替え' : '共有フォルダを設定'}</button>
+          ${sharedFolderHandle ? '<button class="btn btn-secondary" id="st-folder-test">📝 同期テスト</button>' : ''}
+          ${sharedFolderHandle ? '<button class="btn btn-secondary" id="st-folder-disable">解除</button>' : ''}
+        </div>
+        <div id="folder-diag-log" style="margin-top:10px;max-height:200px;overflow-y:auto;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:4px;padding:6px 8px;display:none;"></div>
+        <div style="font-size:11px;color:#9CA3AF;margin-top:6px;line-height:1.6;">
+          指定した共有フォルダ内に <code>shift-data.json</code> を作成して、データを保存・読み込みします。<br>
+          このPCのデータと共有フォルダのデータは自動で同期されます。
+        </div>
+      ` : `
+        <div style="font-size:12px;color:#DC2626;background:#FEE2E2;padding:8px 10px;border-radius:4px;">
+          お使いのブラウザはこの機能に未対応です。<br>Chrome または Edge をご利用ください。
+        </div>
+      `}
+    </div>
+
+    <div style="margin-bottom:20px;border-bottom:1px solid #E5E7EB;padding-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:6px;">バックアップ / 復元（手動）</div>
+      <div style="font-size:11px;color:#9CA3AF;margin-bottom:8px;">
+        スタッフ・グループ・全シフトをJSONファイルで保存／復元します。
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" id="st-export">📥 データを保存</button>
+        <button class="btn btn-secondary" id="st-import">📤 データを復元</button>
+        <input type="file" id="st-import-file" accept=".json" style="display:none;">
+      </div>
+    </div>
+
+    <div style="margin-bottom:20px;border-bottom:1px solid #E5E7EB;padding-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:6px;">Excelテンプレート</div>
+      <div style="font-size:12px;color:#6B7280;margin-bottom:10px;">
+        ${hasTemplate ? '✓ テンプレート登録済み' : '✗ テンプレート未登録'}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" id="st-tpl-replace">${hasTemplate ? '再登録' : '登録'}</button>
+        ${hasTemplate ? '<button class="btn btn-secondary" id="st-tpl-delete">削除</button>' : ''}
+      </div>
+    </div>
+
+    <div style="margin-bottom:20px;border-bottom:1px solid #E5E7EB;padding-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:6px;">現在の月のデータ</div>
+      <button class="btn btn-danger" id="st-clear-month">この月のシフトをクリア</button>
+    </div>
+
+    <div style="margin-bottom:20px;">
+      <div style="font-size:13px;font-weight:700;color:#DC2626;margin-bottom:6px;">⚠ 全データ削除</div>
+      <button class="btn btn-danger" id="st-reset-all">全データ削除（スタッフ・グループ・全シフト）</button>
+    </div>
+
+    <div class="modal-actions">
+      <div></div>
+      <div class="modal-actions-right">
+        <button class="btn btn-secondary" id="st-close">閉じる</button>
+      </div>
+    </div>
+  `);
+
+  document.getElementById('st-close').addEventListener('click', closeModal);
+
+  // 最低社員数
+  document.getElementById('st-min-employees').addEventListener('change', () => {
+    const v = parseInt(document.getElementById('st-min-employees').value);
+    state.minEmployees = isNaN(v) || v < 0 ? 0 : v;
+    saveState();
+    renderCalendar();
+    checkAndRenderViolations();
+    showToast(`最低社員数を ${state.minEmployees}人 に設定しました`);
+  });
+
+  // 共有フォルダ
+  if (fsaSupported) {
+    document.getElementById('st-folder-enable').addEventListener('click', async () => {
+      // 診断ログ表示エリアを open
+      const diag = document.getElementById('folder-diag-log');
+      if (diag) diag.style.display = 'block';
+      // 同モーダル内に状態をライブ表示するため、モーダルは閉じずに await
+      const ok = await enableSharedFolder();
+      if (ok) {
+        // 成功 → モーダルを再描画して「✓ 同期中」表示を反映
+        // （診断ログを見たい人もいるかもしれんから、自動 close せず、ユーザーに閉じてもらう）
+        const f = document.getElementById('folder-diag-log');
+        if (f) {
+          const finalNote = document.createElement('div');
+          finalNote.style.cssText = 'margin-top:6px;padding:6px 8px;background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46;font-weight:700;font-size:12px;border-radius:4px;';
+          finalNote.textContent = `✓ 設定完了！「閉じる」を押してください（ヘッダーが緑「同期: ${sharedFolderName}」になります）`;
+          f.appendChild(finalNote);
+        }
+        // ステータス表示を緑に更新（モーダル再描画はしない、診断ログが消えてまうから）
+        const stEl = document.getElementById('st-folder-status');
+        if (stEl) {
+          stEl.innerHTML = `<span style="color:#059669;font-weight:700;">✓ 同期中</span>: ${escapeHtml(sharedFolderName || '')}`;
+        }
+        // 「共有フォルダを設定」ボタン → 「別のフォルダに切り替え」風にラベル変更
+        const enableBtn = document.getElementById('st-folder-enable');
+        if (enableBtn) {
+          enableBtn.textContent = '別のフォルダに切り替え';
+          enableBtn.classList.remove('btn-primary');
+          enableBtn.classList.add('btn-secondary');
+        }
+        // ヘッダーは renderAll で更新済み
+      } else {
+        // 失敗 → モーダルを再描画してエラー詳細バナーを表示
+        // ただし診断ログを残したいので、ここでは renderEvent しない
+        // 代わりにモーダル下部に閉じるボタンへの案内を出す
+        const f = document.getElementById('folder-diag-log');
+        if (f) {
+          const finalNote = document.createElement('div');
+          finalNote.style.cssText = 'margin-top:6px;padding:6px 8px;background:#FEE2E2;border:1px solid #FCA5A5;color:#7F1D1D;font-weight:700;font-size:12px;border-radius:4px;';
+          finalNote.textContent = `✗ 設定失敗。上の診断ログをチェックして、もう一度「共有フォルダを設定」を押すか別のフォルダで試してください。`;
+          f.appendChild(finalNote);
+        }
+        // 失敗時もステータス表示は更新（rollback されてるので「未設定」が正）
+        const stEl = document.getElementById('st-folder-status');
+        if (stEl) {
+          if (sharedFolderHandle && !sharedFolderNeedsReauth) {
+            stEl.innerHTML = `<span style="color:#059669;font-weight:700;">✓ 同期中</span>: ${escapeHtml(sharedFolderName || '')}`;
+          } else if (sharedFolderHandle && sharedFolderNeedsReauth) {
+            stEl.innerHTML = `<span style="color:#D97706;font-weight:700;">⚠ 再承認が必要</span>: ${escapeHtml(sharedFolderName || '')}`;
+          } else {
+            stEl.innerHTML = '<span style="color:#6B7280;">未設定（このPCのブラウザにのみ保存）</span>';
+          }
+        }
+      }
+    });
+    if (sharedFolderHandle && sharedFolderNeedsReauth) {
+      const reauthBtn = document.getElementById('st-folder-reauth');
+      if (reauthBtn) {
+        reauthBtn.addEventListener('click', async () => {
+          const ok = await requestPendingPermission();
+          if (ok) {
+            closeModal();
+          } else {
+            openSettingsModal();
+          }
+        });
+      }
+    }
+    if (sharedFolderHandle) {
+      document.getElementById('st-folder-test').addEventListener('click', async () => {
+        const diag = document.getElementById('folder-diag-log');
+        if (diag) diag.style.display = 'block';
+        await testSharedFolderSync();
+      });
+      document.getElementById('st-folder-disable').addEventListener('click', () => {
+        closeModal();
+        confirmDialog('共有フォルダ同期を解除しますか？\n以後のデータはこのPCのブラウザにのみ保存されます。', async () => {
+          await disableSharedFolder();
+          renderAll();
+        });
+      });
+    }
+  }
+
+  // バックアップ / 復元
+  document.getElementById('st-export').addEventListener('click', () => {
+    exportDataToJson();
+  });
+  document.getElementById('st-import').addEventListener('click', () => {
+    document.getElementById('st-import-file').click();
+  });
+  document.getElementById('st-import-file').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    closeModal();
+    confirmDialog('バックアップから復元しますか？\n現在のデータは上書きされます。', () => {
+      importDataFromJson(file).catch(() => {});
+    });
+  });
+
+  // テンプレ
+  document.getElementById('st-tpl-replace').addEventListener('click', () => {
+    closeModal();
+    openTemplateUploadModal();
+  });
+  if (hasTemplate) {
+    document.getElementById('st-tpl-delete').addEventListener('click', () => {
+      closeModal();
+      confirmDialog('保存済みのExcelテンプレートを削除しますか？', async () => {
+        await clearStoredTemplate();
+        showToast('テンプレートを削除しました');
+      });
+    });
+  }
+
+  // 月クリア
+  document.getElementById('st-clear-month').addEventListener('click', () => {
+    closeModal();
+    const ym = state.currentMonth;
+    confirmDialog(`${parseMonth(ym).year}年${parseMonth(ym).month}月のシフト・必要人数をクリアしますか？`, () => {
+      const days = daysInMonth(ym);
+      state.months[ym] = {
+        requiredStaff: new Array(days).fill(0),
+        requiredEmployee: new Array(days).fill(0),
+        paidLeaves: {},
+        shifts: {},
+        generated: false,
+      };
+      saveState();
+      renderAll();
+      showToast('クリアしました');
+    });
+  });
+
+  // 全削除
+  document.getElementById('st-reset-all').addEventListener('click', () => {
+    closeModal();
+    confirmDialog('スタッフ・グループ・全月のシフトを全削除します。元に戻せません。本当に実行しますか？', async () => {
+      localStorage.removeItem(STORAGE_KEY);
+      await clearHandleFromDB();
+      location.reload();
+    });
+  });
+}
+
+/* ===== 月切り替え ===== */
+function changeMonth(delta) {
+  const { year, month } = parseMonth(state.currentMonth);
+  let newM = month + delta;
+  let newY = year;
+  if (newM < 1) { newM = 12; newY--; }
+  if (newM > 12) { newM = 1; newY++; }
+  state.currentMonth = formatMonth(newY, newM);
+  ensureMonthData(state.currentMonth);
+  saveState();
+  renderAll();
+}
+
+function copyPrevMonth() {
+  const { year, month } = parseMonth(state.currentMonth);
+  let prevM = month - 1;
+  let prevY = year;
+  if (prevM < 1) { prevM = 12; prevY--; }
+  const prevKey = formatMonth(prevY, prevM);
+  const prevData = state.months[prevKey];
+  if (!prevData) {
+    showToast('前月のデータがありません');
+    return;
+  }
+  confirmDialog(`${prevY}年${prevM}月のシフトを今月にコピーします。\n（希望休・必須出勤・研修・有給はリセットされ、通常シフトのみコピーされます）`, () => {
+    const md = state.months[state.currentMonth];
+    const days = daysInMonth(state.currentMonth);
+    md.shifts = {};
+    // 通常出勤と休みのみコピー（ロック系・研修・有給はリセット）
+    Object.keys(prevData.shifts).forEach(k => {
+      const t = prevData.shifts[k];
+      if (t === 'work' || t === 'off') {
+        // 日数が違う場合は同じ日だけコピー
+        const parts = k.split('_');
+        const day = parseInt(parts[1]);
+        if (day <= days) md.shifts[k] = t;
+      }
+    });
+    // 必要人数もコピー
+    md.requiredStaff = prevData.requiredStaff.slice(0, days);
+    while (md.requiredStaff.length < days) md.requiredStaff.push(0);
+    saveState();
+    renderAll();
+    showToast('前月のシフトをコピーしました');
+  });
+}
+
+</script>
+<script>
+/* ===== 一括必要人数設定 ===== */
+function applyBulkRequired(scope) {
+  const v = parseInt(document.getElementById('bulk-required').value);
+  if (isNaN(v) || v < 0) { showToast('人数を入力してください'); return; }
+  const ym = state.currentMonth;
+  const days = daysInMonth(ym);
+  const md = state.months[ym];
+  const arr = md.requiredStaff;
+  for (let d = 1; d <= days; d++) {
+    const dow = dayOfWeek(ym, d);
+    if (scope === 'all') arr[d - 1] = v;
+    else if (scope === 'weekday' && dow >= 1 && dow <= 5) arr[d - 1] = v;
+    else if (scope === 'weekend' && (dow === 0 || dow === 6)) arr[d - 1] = v;
+  }
+  saveState();
+  renderCalendar();
+  checkAndRenderViolations();
+}
+
+/* ===== 全描画 ===== */
+function renderAll() {
+  document.getElementById('month-label').textContent =
+    `${parseMonth(state.currentMonth).year}年${parseMonth(state.currentMonth).month}月`;
+  renderSidebar();
+  renderLegend();
+  renderCalendar();
+  checkAndRenderViolations();
+  updateModeBar();
+  updateSyncStatus();
+}
+
+function updateSyncStatus() {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  if (sharedFolderHandle && !sharedFolderNeedsReauth) {
+    const savedInfo = hasUnsavedChanges
+      ? ' <span style="color:#D97706;font-weight:700;">未保存の変更あり</span>'
+      : (lastSavedAt ? ` 保存済 ${lastSavedAt.toLocaleTimeString('ja-JP', { hour12: false, hour: '2-digit', minute: '2-digit' })}` : '');
+    el.innerHTML = `<span style="color:${hasUnsavedChanges ? '#D97706' : '#059669'};">●</span> ${escapeHtml(sharedFolderName || '?')}${savedInfo}`;
+    el.style.background = hasUnsavedChanges ? '#FFFBEB' : '#ECFDF5';
+    el.style.borderColor = hasUnsavedChanges ? '#FCD34D' : '#A7F3D0';
+    el.title = hasUnsavedChanges ? '未保存の変更があります（Ctrl+S で保存）' : 'クリックで設定を開く';
+  } else if (sharedFolderHandle && sharedFolderNeedsReauth) {
+    el.innerHTML = `<span style="color:#D97706;">⚠</span> 再承認待ち: ${escapeHtml(sharedFolderName || '?')}`;
+    el.style.background = '#FEF3C7';
+    el.style.borderColor = '#FCD34D';
+    el.title = 'クリックして共有フォルダへのアクセスを再承認';
+  } else {
+    el.innerHTML = `<span style="color:#9CA3AF;">○</span> 未接続（このPCのみ）`;
+    el.style.background = '#F9FAFB';
+    el.style.borderColor = '#E5E7EB';
+    el.title = 'クリックで設定を開く';
+  }
+  // 保存ボタンの未保存バッジも連動
+  const badge = document.getElementById('save-badge');
+  if (badge) badge.style.display = (sharedFolderHandle && hasUnsavedChanges) ? 'inline' : 'none';
+}
+
+/* ===== 初期化 ===== */
+async function init() {
+  loadState();
+
+  // ヘッダーイベント
+  document.getElementById('btn-prev-month').addEventListener('click', () => changeMonth(-1));
+  document.getElementById('btn-next-month').addEventListener('click', () => changeMonth(1));
+  document.getElementById('btn-copy-prev').addEventListener('click', copyPrevMonth);
+  document.getElementById('btn-save').addEventListener('click', manualSave);
+  document.getElementById('btn-export').addEventListener('click', exportToExcel);
+  document.getElementById('btn-settings').addEventListener('click', openSettingsModal);
+  document.getElementById('sync-status').addEventListener('click', async () => {
+    // 同期未確立だが保留中のハンドルがある場合、許可要求してみる
+    if (!isFileSystemAccessSupported()) {
+      openSettingsModal();
+      return;
+    }
+    if (sharedFolderHandle) {
+      // 再承認フラグが立ってる、または queryPermission が granted でない場合は requestPermission を試す
+      let needReauth = sharedFolderNeedsReauth;
+      if (!needReauth) {
+        try {
+          const perm = await sharedFolderHandle.queryPermission({ mode: 'readwrite' });
+          needReauth = (perm !== 'granted');
+        } catch (e) {
+          console.warn('queryPermission on click failed:', e);
+          needReauth = true;
+        }
+      }
+      if (needReauth) {
+        const ok = await requestPendingPermission();
+        if (ok) return;
+      }
+    }
+    openSettingsModal();
+  });
+  document.getElementById('btn-generate').addEventListener('click', () => {
+    if (state.staff.length === 0) {
+      showToast('スタッフを追加してください');
+      return;
+    }
+    confirmDialog(
+      '現在のシフトを上書きして自動生成します。\n（希望休・必須出勤・研修は保持されます）',
+      async () => {
+        try {
+          await generateShifts();
+        } catch (e) {
+          console.error(e);
+          hideLoading();
+          showToast('生成エラー: ' + e.message);
+        }
+      }
+    );
+  });
+
+  // サイドバー追加ボタン
+  document.getElementById('btn-add-staff').addEventListener('click', () => openStaffModal(null));
+  document.getElementById('btn-add-group').addEventListener('click', () => openGroupModal(null));
+
+  // 一括必要人数
+  document.getElementById('btn-apply-bulk').addEventListener('click', () => applyBulkRequired('all'));
+  document.getElementById('btn-apply-weekday').addEventListener('click', () => applyBulkRequired('weekday'));
+  document.getElementById('btn-apply-weekend').addEventListener('click', () => applyBulkRequired('weekend'));
+
+  // モーダル外クリックで閉じる
+  document.getElementById('modal-backdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'modal-backdrop') closeModal();
+  });
+
+  // ドラッグ選択の終了（ドキュメント全体）
+  document.addEventListener('mouseup', onDocumentMouseUp);
+
+  // キーボード
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault(); // ブラウザの「ページを保存」を抑止
+      manualSave();
+      return;
+    }
+    if (e.key === 'Escape') {
+      // モード解除 → 選択クリア → モーダル → ピッカーの順で処理
+      if (currentMode !== null) { setMode(null); return; }
+      if (selectedCells.size > 0) { clearSelection(); return; }
+      closeModal();
+      document.querySelectorAll('.cell-picker').forEach(p => p.remove());
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedCells.size > 0) {
+      // テキスト入力中なら無視
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      e.preventDefault();
+      selectedCells.forEach(key => {
+        const [row, day] = key.split('_').map(Number);
+        const staff = orderedStaffCache[row];
+        if (!staff) return;
+        setShift(staff.id, day, '');
+      });
+      saveState();
+      clearSelection();
+      renderCalendar();
+      checkAndRenderViolations();
+      showToast('選択範囲を消去しました');
+    }
+  });
+
+  // 隠しコマンド: テンプレ再設定（ヘッダーロゴをShift+クリック）
+  document.querySelector('.logo').addEventListener('click', (e) => {
+    if (e.shiftKey) resetTemplate();
+  });
+
+  renderAll();
+
+  // 旧テンプレデータを IndexedDB へ移行
+  migrateTemplateIfNeeded();
+
+  // 未保存の変更があるままタブを閉じようとしたら警告
+  window.addEventListener('beforeunload', (e) => {
+    if (sharedFolderHandle && hasUnsavedChanges) {
+      e.preventDefault();
+      e.returnValue = ''; // Chromium系で警告ダイアログを出すのに必要
+    }
+  });
+
+  // 起動時：共有フォルダ選択画面を表示（前回フォルダへのワンクリック再接続付き）
+  if (isFileSystemAccessSupported()) {
+    showStartupFolderScreen().catch(e => console.error(e));
+  }
+}
+
+document.addEventListener('DOMContentLoaded', init);
+
+</script>
+</body>
+</html>
