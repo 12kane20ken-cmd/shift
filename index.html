@@ -504,32 +504,27 @@
     margin-right: 4px;
   }
 
-  /* メモゾーン（シフト表の上・Excel出力対象外） */
-  .memo-zone {
-    background: #FFFDF5;
-    border: 1px solid #FDE68A;
-    border-radius: 4px;
-    padding: 8px 12px;
-    margin-bottom: 12px;
+  /* 日別メモ行（カレンダーの日付行の下・Excel出力対象外） */
+  .memo-row td { background: #FFFDF5; height: 34px; }
+  .memo-row .name-col, .memo-row .holiday-col {
+    background: #FEF3C7; color: #92400E; font-size: 10px; font-weight: 700;
   }
-  .memo-zone-label {
-    font-size: 11px; font-weight: 700; color: #92400E;
-    margin-bottom: 6px;
+  .memo-cell { position: relative; }
+  .memo-cell.has-memo { background: #FEF9C3; }
+  .day-memo {
+    display: block; width: 100%; height: 32px; margin: 0;
+    border: none; background: transparent; resize: none;
+    font-family: inherit; font-size: 9px; line-height: 1.25; color: #78350F;
+    padding: 2px 3px; text-align: left; overflow: hidden; cursor: text;
   }
-  .memo-zone-label span {
-    font-weight: 400; color: #B45309; margin-left: 6px;
+  .day-memo:focus {
+    position: absolute; top: 0; left: 0; z-index: 40;
+    width: 190px; height: 86px;
+    background: #FFFFFF; border: 1px solid #F59E0B; border-radius: 3px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+    font-size: 12px; overflow: auto; outline: none;
   }
-  .memo-input {
-    width: 100%;
-    padding: 5px 8px;
-    border: 1px solid #FCD34D;
-    border-radius: 3px;
-    background: #FFFFFF;
-    font-size: 12px;
-    color: #111827;
-  }
-  .memo-input + .memo-input { margin-top: 5px; }
-  .memo-input:focus { outline: 2px solid #F59E0B; outline-offset: -2px; border-color: transparent; }
+  .memo-cell.open-left .day-memo:focus { left: auto; right: 0; }
 
   /* 外部スタッフ行（出勤人数にカウントしない参考行） */
   .ext-row > td { background-color: #F3F4F6; }
@@ -598,12 +593,6 @@
       <div class="violations-list" id="violations-list"></div>
     </div>
 
-    <div class="memo-zone" id="memo-zone">
-      <div class="memo-zone-label">📝 メモ<span>（この月のメモ。Excelには出力されません）</span></div>
-      <input type="text" class="memo-input" id="memo-0" maxlength="500" placeholder="メモ1（なんでも書き込めます）">
-      <input type="text" class="memo-input" id="memo-1" maxlength="500" placeholder="メモ2">
-    </div>
-
     <div class="calendar-wrap" id="calendar-wrap">
       <table class="calendar" id="calendar"></table>
     </div>
@@ -640,7 +629,7 @@ let state = {
   staff: [],          // { id, name, category, startHour, endHour, startMin, endMin, groupId, holidayBase, weeklyOff, fixedOffDays }
   groups: [],         // { id, name, color }
   currentMonth: null, // "YYYY-MM"
-  months: {},         // { "YYYY-MM": { requiredStaff: [...], paidLeaves: {}, shifts: {}, memo: ['',''] } }
+  months: {},         // { "YYYY-MM": { requiredStaff: [...], paidLeaves: {}, shifts: {}, dayMemo: [[日ごと],[日ごと]] } }
   minEmployees: 0,    // 最低社員数（全日共通、グローバル設定）
   coverageRules: [],  // [{ time: 'HH:MM', min: n }] 指定時刻に現場に居る人数の下限
 };
@@ -747,13 +736,11 @@ function migrateLoadedData(data) {
       .filter(r => hmToMinutes(r.time) != null)
       .map(r => ({ time: minutesToHm(hmToMinutes(r.time)), min: Math.max(0, Math.round(r.min)) }));
   }
-  // 月データ（メモ欄）
+  // 月データ（日別メモ欄）
   Object.keys(state.months || {}).forEach(ym => {
     const m = state.months[ym];
     if (!m) return;
-    if (!Array.isArray(m.memo)) m.memo = ['', ''];
-    while (m.memo.length < 2) m.memo.push('');
-    m.memo = m.memo.slice(0, 2).map(v => (v == null ? '' : String(v)));
+    ensureDayMemo(m, ym);
   });
 }
 
@@ -1446,6 +1433,78 @@ function getCarryStreaks(staffId, ym) {
   return { carryIn, carryOut };
 }
 
+/* 任意の月のシフトが「休み系」かどうか */
+function isHolidayInMonth(ym, staffId, day) {
+  const m = state.months[ym];
+  if (!m || !m.shifts) return false;
+  const def = SHIFT_TYPES[m.shifts[`${staffId}_${day}`]];
+  return !!(def && def.countAsHoliday);
+}
+
+/* その月にこのスタッフのシフトが1つでも入っているか（＝判定に使えるデータがあるか） */
+function staffHasDataInMonth(ym, staffId) {
+  const m = state.months[ym];
+  if (!m || !m.shifts) return false;
+  const prefix = `${staffId}_`;
+  return Object.keys(m.shifts).some(k => k.startsWith(prefix) && m.shifts[k]);
+}
+
+/* 月を跨ぐ週（日〜土）の、前月側・翌月側の休日数
+ * head: 当月1日を含む週の「前月側」の休日数（1日が日曜 or 前月データ無しなら null）
+ * tail: 当月末日を含む週の「翌月側」の休日数（末日が土曜 or 翌月データ無しなら null）
+ * headFrom / tailTo: 表示用の日付（前月の何日から／翌月の何日まで） */
+function getWeekCarryHolidays(staffId, ym) {
+  const days = daysInMonth(ym);
+  const res = { head: null, headFrom: 0, tail: null, tailTo: 0 };
+  const dow1 = dayOfWeek(ym, 1);
+  if (dow1 > 0) {
+    const prev = prevMonthKey(ym);
+    if (staffHasDataInMonth(prev, staffId)) {
+      const pd = daysInMonth(prev);
+      let c = 0;
+      for (let d = pd - dow1 + 1; d <= pd; d++) if (isHolidayInMonth(prev, staffId, d)) c++;
+      res.head = c;
+      res.headFrom = pd - dow1 + 1;
+    }
+  }
+  const dowL = dayOfWeek(ym, days);
+  if (dowL < 6) {
+    const next = nextMonthKey(ym);
+    if (staffHasDataInMonth(next, staffId)) {
+      const k = 6 - dowL;
+      let c = 0;
+      for (let d = 1; d <= k; d++) if (isHolidayInMonth(next, staffId, d)) c++;
+      res.tail = c;
+      res.tailTo = k;
+    }
+  }
+  return res;
+}
+
+/* 日別メモ（2行×その月の日数）を必ず用意する。旧形式（全幅メモ2行）は1日の欄へ移す */
+const MEMO_ROWS = 2;
+function ensureDayMemo(m, ym) {
+  const days = daysInMonth(ym);
+  if (!Array.isArray(m.dayMemo)) m.dayMemo = [];
+  for (let i = 0; i < MEMO_ROWS; i++) {
+    let row = Array.isArray(m.dayMemo[i]) ? m.dayMemo[i] : [];
+    row = row.slice(0, days).map(v => (v == null ? '' : String(v)));
+    while (row.length < days) row.push('');
+    m.dayMemo[i] = row;
+  }
+  m.dayMemo.length = MEMO_ROWS;
+  // 旧バージョンの全幅メモ → 1日の欄へ引っ越し（データを捨てない）
+  if (Array.isArray(m.memo)) {
+    for (let i = 0; i < MEMO_ROWS; i++) {
+      const old = m.memo[i] == null ? '' : String(m.memo[i]);
+      if (old && !m.dayMemo[i][0]) m.dayMemo[i][0] = old;
+      else if (old && m.dayMemo[i][0] !== old) m.dayMemo[i][0] = m.dayMemo[i][0] + ' / ' + old;
+    }
+    delete m.memo;
+  }
+  return m.dayMemo;
+}
+
 function ensureMonthData(ym) {
   if (!state.months[ym]) {
     state.months[ym] = {
@@ -1453,12 +1512,11 @@ function ensureMonthData(ym) {
       requiredEmployee: new Array(daysInMonth(ym)).fill(0),
       paidLeaves: {},
       shifts: {},
-      memo: ['', ''],
+      dayMemo: [new Array(daysInMonth(ym)).fill(''), new Array(daysInMonth(ym)).fill('')],
       generated: false,
     };
   } else {
-    if (!Array.isArray(state.months[ym].memo)) state.months[ym].memo = ['', ''];
-    while (state.months[ym].memo.length < 2) state.months[ym].memo.push('');
+    ensureDayMemo(state.months[ym], ym);
     // generated フラグの旧データ互換性
     if (state.months[ym].generated === undefined) {
       state.months[ym].generated = Object.keys(state.months[ym].shifts || {}).length > 0;
@@ -2118,6 +2176,22 @@ function renderCalendar() {
   theadHtml += '<th class="holiday-col">月休<br>日数</th>';
   theadHtml += '</tr>';
 
+  // 日別メモ行（2行・Excelには出力しない）
+  const dayMemo = ensureDayMemo(md, ym);
+  for (let mi = 0; mi < MEMO_ROWS; mi++) {
+    theadHtml += `<tr class="memo-row"><td class="name-col">メモ${mi + 1}</td>`;
+    for (let d = 1; d <= days; d++) {
+      const v = dayMemo[mi][d - 1] || '';
+      const dow = dayOfWeek(ym, d);
+      const weekStart = (dow === 0 && d > 1) ? ' week-start' : '';
+      const openLeft = (d > days - 5) ? ' open-left' : '';
+      theadHtml += `<td class="memo-cell${weekStart}${openLeft}${v ? ' has-memo' : ''}">`
+        + `<textarea class="day-memo" data-memo-row="${mi}" data-day="${d}" rows="2" spellcheck="false" maxlength="300"`
+        + ` title="${escapeHtml(v)}">${escapeHtml(v)}</textarea></td>`;
+    }
+    theadHtml += '<td class="holiday-col"></td></tr>';
+  }
+
   // 必要人数行（全体）
   theadHtml += '<tr class="req-row">';
   theadHtml += '<td class="name-col">必要人数</td>';
@@ -2250,6 +2324,37 @@ function bindCalendarEvents() {
   document.querySelectorAll('.cell[data-staff-id]').forEach(el => {
     el.addEventListener('mousedown', onCellMouseDown);
     el.addEventListener('mouseenter', onCellMouseEnter);
+  });
+
+  // 日別メモ（入力のたびに保存。再描画はしないので入力中にフォーカスが外れない）
+  document.querySelectorAll('.day-memo').forEach(ta => {
+    ta.addEventListener('input', () => {
+      const md = state.months[state.currentMonth];
+      if (!md) return;
+      const memo = ensureDayMemo(md, state.currentMonth);
+      const mi = parseInt(ta.dataset.memoRow);
+      const day = parseInt(ta.dataset.day);
+      memo[mi][day - 1] = ta.value;
+      ta.title = ta.value;
+      const td = ta.closest('td');
+      if (td) td.classList.toggle('has-memo', ta.value !== '');
+      clearTimeout(memoSaveTimer);
+      memoSaveTimer = setTimeout(() => saveState(), 400);
+    });
+    ta.addEventListener('blur', () => {
+      clearTimeout(memoSaveTimer);
+      saveState();
+      ta.scrollTop = 0;
+    });
+    ta.addEventListener('keydown', (e) => {
+      // Enter で確定（改行は Shift+Enter）、Esc でも確定
+      if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        ta.blur();
+      }
+    });
+    ta.addEventListener('mousedown', (e) => e.stopPropagation()); // セル選択ドラッグと干渉させない
   });
 
   // 必要人数入力
@@ -2622,33 +2727,51 @@ function detectViolations() {
     }
   });
 
-  // 2. 週の休日数チェック（スタッフごとの設定値・日〜土の暦週、7日揃った週のみ判定）
+  // 2. 週の休日数チェック（スタッフごとの設定値・日〜土の暦週）
+  //    ★月を跨ぐ週は、前月・翌月のシフトも合わせて判定する
+  //      （隣の月にこの人のデータが無い場合だけは判定できないのでスキップ）
+  const { month: curMonthNum } = parseMonth(ym);
+  const prevMonthNum = parseMonth(prevMonthKey(ym)).month;
+  const nextMonthNum = parseMonth(nextMonthKey(ym)).month;
   staffList.forEach(s => {
-    // 各日が属する週の最初の日曜日を割り当て
-    const weeks = {}; // key: 日付（日曜の日付、月外なら負/超過の仮想インデックス）, value: { workDays, offDays, days[] }
-    for (let d = 1; d <= days; d++) {
-      const dow = dayOfWeek(ym, d);
-      const sundayDay = d - dow; // この週の日曜日（当月内かもしれないし負かも）
-      const wkey = sundayDay; // 同月内
-      if (!weeks[wkey]) weeks[wkey] = { holidays: 0, days: [] };
-      const t = getShift(s.id, d);
-      const def = SHIFT_TYPES[t];
-      if (def && def.countAsHoliday) weeks[wkey].holidays++;
-      weeks[wkey].days.push(d);
-    }
     const minWeekOff = (typeof s.weeklyOff === 'number') ? s.weeklyOff : 2;
     if (minWeekOff <= 0) return; // 0 は判定なし
+    const carryW = getWeekCarryHolidays(s.id, ym);
+
+    // 各日が属する週の日曜日の日付でグルーピング（月外なら 0 以下 / 月末超え）
+    const weeks = {};
+    for (let d = 1; d <= days; d++) {
+      const sundayDay = d - dayOfWeek(ym, d);
+      if (!weeks[sundayDay]) weeks[sundayDay] = { sunday: sundayDay, holidays: 0, days: [] };
+      const def = SHIFT_TYPES[getShift(s.id, d)];
+      if (def && def.countAsHoliday) weeks[sundayDay].holidays++;
+      weeks[sundayDay].days.push(d);
+    }
+
     Object.keys(weeks).forEach(k => {
       const w = weeks[k];
-      // 1週間まるごと当月にある週だけチェック（7日揃ってる）
-      if (w.days.length < 7) return;
-      if (w.holidays < minWeekOff) {
+      let total = w.holidays;
+      let label;
+      if (w.days.length === 7) {
+        label = `${w.days[0]}日週`;
+      } else if (w.sunday < 1) {
+        // 前月から続く週
+        if (carryW.head == null) return;
+        total += carryW.head;
+        label = `${prevMonthNum}/${carryW.headFrom}〜${curMonthNum}/${w.days[w.days.length - 1]}の週`;
+      } else {
+        // 翌月へ続く週
+        if (carryW.tail == null) return;
+        total += carryW.tail;
+        label = `${curMonthNum}/${w.days[0]}〜${nextMonthNum}/${carryW.tailTo}の週`;
+      }
+      if (total < minWeekOff) {
         violations.push({
           type: 'week_holiday',
           staffId: s.id,
           staffName: s.name,
           days: w.days,
-          message: `${s.name} ${w.days[0]}日週（${w.holidays}日休 < 週${minWeekOff}休）`,
+          message: `${s.name} ${label}（${total}日休 < 週${minWeekOff}休）`,
         });
       }
     });
@@ -2969,6 +3092,10 @@ function runSingleGeneration(ym, days, md, strategy) {
   const carryIn = (id) => (carry[id] ? carry[id].carryIn : 0);
   const carryOut = (id) => (carry[id] ? carry[id].carryOut : 0);
 
+  // ★月を跨ぐ週の、前月・翌月側の休日数（週休判定用）
+  const weekCarry = {};
+  targets.forEach(s => { weekCarry[s.id] = getWeekCarryHolidays(s.id, ym); });
+
   // ★時間帯ごとの最低人数条件
   const coverRules = activeCoverageRules();
 
@@ -3103,7 +3230,8 @@ function runSingleGeneration(ym, days, md, strategy) {
     const preOff = (day, carried) => {
       if (carried < 3) return;
       if (needOffMap[s.id] <= 0) return;
-      if (!canPlaceOffLoose(s.id, day)) return;
+      // ★人数・社員数・時間帯の条件を満たすときだけ先押さえ（該当者が多い日に全員休ませない）
+      if (!canPlaceOffStrict(s.id, day)) return;
       md.shifts[`${s.id}_${day}`] = 'off';
       crossMonthLock.add(`${s.id}_${day}`);
       needOffMap[s.id]--;
@@ -3175,7 +3303,7 @@ function runSingleGeneration(ym, days, md, strategy) {
         else if (consec.total === 3) score += 10;
 
         // 週の規定休数に届いてない週なら強くプラス
-        const weekHolidays = countWeekHolidays(s.id, d, days, ym, md.shifts);
+        const weekHolidays = countWeekHolidays(s.id, d, days, ym, md.shifts, weekCarry[s.id]);
         const minWeekOff = (typeof s.weeklyOff === 'number') ? s.weeklyOff : 2;
         if (minWeekOff > 0 && weekHolidays < minWeekOff) score += 30;
 
@@ -3623,6 +3751,83 @@ function runSingleGeneration(ym, days, md, strategy) {
   // 最終 4連勤修復（規定休数を下回らせない範囲で）
   repairConsecutive4();
 
+  /* ===== 第五パス: 週休修復（★月を跨ぐ週も含む・休数不変スワップ） =====
+   * 週の休みが足りない週があれば、休みに余裕がある別の週の「休」を1日持ってくる。
+   * 移した先の日は人数・社員数・時間帯・グループの条件をすべて満たす日だけ。
+   * 連勤が悪化するスワップは採用しない。 */
+  function weekInfoGen(staffId, day) {
+    const sun = day - dayOfWeek(ym, day);
+    let h = 0;
+    for (let o = 0; o < 7; o++) {
+      const dd = sun + o;
+      if (dd < 1 || dd > days) continue;
+      const def = SHIFT_TYPES[md.shifts[`${staffId}_${dd}`]];
+      if (def && def.countAsHoliday) h++;
+    }
+    const wc = weekCarry[staffId];
+    let known = true;
+    if (sun < 1) { if (wc && wc.head != null) h += wc.head; else known = false; }
+    if (sun + 6 > days) { if (wc && wc.tail != null) h += wc.tail; else known = false; }
+    return { sun, holidays: h, known };
+  }
+  function repairWeeklyOff() {
+    for (const s of targets) {
+      const minW = (typeof s.weeklyOff === 'number') ? s.weeklyOff : 2;
+      if (minW <= 0) continue;
+      for (let guard = 0; guard < 20; guard++) {
+        // 不足している週を探す（判定できない週＝隣月データ無しの端数週は対象外）
+        let short = null;
+        for (let sun = 1 - dayOfWeek(ym, 1); sun <= days; sun += 7) {
+          const wi = weekInfoGen(s.id, Math.max(1, sun));
+          if (wi.known && wi.holidays < minW) { short = wi; break; }
+        }
+        if (!short) break;
+
+        // 移し先：不足週の中の「出勤」日で、休ませても条件を壊さない日
+        const toDays = [];
+        for (let o = 0; o < 7; o++) {
+          const d = short.sun + o;
+          if (d < 1 || d > days) continue;
+          if (md.shifts[`${s.id}_${d}`] !== 'work') continue;
+          if (!canPlaceOffStrict(s.id, d)) continue;
+          toDays.push(d);
+        }
+        // 移し元：別の週にある通常の「休」で、抜いてもその週が規定を割らない日
+        const fromDays = [];
+        for (let d2 = 1; d2 <= days; d2++) {
+          if (md.shifts[`${s.id}_${d2}`] !== 'off') continue;
+          if (isLockedOff(s.id, d2)) continue;
+          const wi2 = weekInfoGen(s.id, d2);
+          if (wi2.sun === short.sun) continue;
+          if (wi2.holidays - 1 < minW) continue;
+          fromDays.push(d2);
+        }
+        if (toDays.length === 0 || fromDays.length === 0) break;
+        toDays.sort(() => Math.random() - 0.5);
+        fromDays.sort(() => Math.random() - 0.5);
+
+        const before = countLongStreakDays(s.id);
+        let done = false;
+        outer:
+        for (const d of toDays) {
+          for (const d2 of fromDays) {
+            md.shifts[`${s.id}_${d}`] = 'off';
+            md.shifts[`${s.id}_${d2}`] = 'work';
+            if (countLongStreakDays(s.id) > before) {
+              md.shifts[`${s.id}_${d}`] = 'work';
+              md.shifts[`${s.id}_${d2}`] = 'off';
+              continue;
+            }
+            done = true;
+            break outer;
+          }
+        }
+        if (!done) break;
+      }
+    }
+  }
+  repairWeeklyOff();
+
   // 注: 規定休数達成が絶対優先のため、強制 off→work 変換は行わない。
   // 残った人数不足は違反パネルで表示される。
 }
@@ -3634,8 +3839,9 @@ function isWorkDayInShifts(staffId, day, shifts) {
   return def && def.countAsWork;
 }
 
-function countWeekHolidays(staffId, refDay, days, ym, shifts) {
+function countWeekHolidays(staffId, refDay, days, ym, shifts, weekCarry) {
   // refDayを含む週（日〜土）の休数
+  // ★weekCarry（getWeekCarryHolidays の結果）があれば、月を跨ぐ週は前月・翌月側の休みも足す
   const dow = dayOfWeek(ym, refDay);
   const sundayDay = refDay - dow;
   let count = 0;
@@ -3645,6 +3851,10 @@ function countWeekHolidays(staffId, refDay, days, ym, shifts) {
     const t = shifts[`${staffId}_${d}`];
     const def = SHIFT_TYPES[t];
     if (def && def.countAsHoliday) count++;
+  }
+  if (weekCarry) {
+    if (sundayDay < 1 && weekCarry.head != null) count += weekCarry.head;
+    if (sundayDay + 6 > days && weekCarry.tail != null) count += weekCarry.tail;
   }
   return count;
 }
@@ -3888,31 +4098,637 @@ function createXlsxStyleEditor(stylesXml) {
     return newIdx;
   }
 
-  return { variant, output: () => xml };
-}
-
-// シートXMLから既存セルのスタイルidxを取得（セルなし=null）
-function xlsxGetCellStyleIdx(sheetXml, ref) {
-  const re = new RegExp('<c r="' + ref + '"[^>]*');
-  const m = sheetXml.match(re);
-  if (!m) return null;
-  const sm = m[0].match(/ s="(\d+)"/);
-  return sm ? parseInt(sm[1]) : 0;
-}
-
-function xlsxBuildCellXml(ref, spec) {
-  const sAttr = (spec.styleIdx != null) ? ' s="' + spec.styleIdx + '"' : '';
-  if (spec.dateSerial != null) {
-    return '<c r="' + ref + '"' + sAttr + '><v>' + spec.dateSerial + '</v></c>';
+  // 前月の出力で付けた色（グループ色の塗り・赤字）を外した素のスタイルidxを返す
+  const OUR_FILLS = new Set(Object.values(XLSX_GROUP_FILL));
+  const cleanCache = {};
+  function rgbIn(elem, tag) {
+    if (!elem) return null;
+    const m = elem.match(new RegExp('<' + tag + '\\b[^>]*\\brgb="([0-9A-Fa-f]{8})"'));
+    return m ? m[1].toUpperCase() : null;
   }
+  function clean(origIdx, opt) {
+    const key = origIdx + '|' + (opt.fill ? 1 : 0) + (opt.font ? 1 : 0);
+    if (cleanCache[key] != null) return cleanCache[key];
+    let xf = getElem('cellXfs', 'xf', origIdx);
+    if (!xf) return (cleanCache[key] = origIdx);
+    let changed = false;
+    if (opt.fill) {
+      const fm = xf.match(/fillId="(\d+)"/);
+      if (fm && OUR_FILLS.has(rgbIn(getElem('fills', 'fill', parseInt(fm[1])), 'fgColor'))) {
+        xf = xf.replace(/fillId="\d+"/, 'fillId="0"');
+        changed = true;
+      }
+    }
+    if (opt.font) {
+      const fm = xf.match(/fontId="(\d+)"/);
+      const font = fm ? getElem('fonts', 'font', parseInt(fm[1])) : null;
+      if (font && rgbIn(font, 'color') === XLSX_RED) {
+        const plain = font.replace(/<color\b[^>]*\/>/g, '');
+        const nid = appendChild('fonts', 'font', plain);
+        xf = xf.replace(/fontId="\d+"/, 'fontId="' + nid + '"');
+        changed = true;
+      }
+    }
+    if (!changed) return (cleanCache[key] = origIdx);
+    return (cleanCache[key] = appendChild('cellXfs', 'xf', xf));
+  }
+
+  return { variant, clean, output: () => xml };
+}
+
+/* ======================================================================
+ * Excel テンプレの構造編集
+ *  - スタッフ欄の自動検出（前月に出力したファイルをテンプレにしても正しく数える）
+ *  - 人数の増減に合わせて行を挿入／削除（Excelで行を挿入・削除したのと同じ規則で
+ *    数式・結合セル・条件付き書式・入力規則・印刷範囲・図形・コメントを追随させる）
+ *  - 数式が入っているセルには書き込まない
+ *  - 共有数式の展開、計算チェーンの削除、文字列は共有文字列で書き込む
+ *    （Excelが自分で保存したときと同じ形にして、バージョン差で壊れにくくする）
+ * ====================================================================== */
+
+const XLSX_GROUP_FILL = { a: 'FFFFF7DC', b: 'FFE4F8EB', c: 'FFDBEAFE', d: 'FFEDE9FE' };
+const XLSX_RED = 'FFFF0000';
+const XLSX_DAY_COLS = 31;
+
+function xlsxUnescape(s) {
+  return String(s).replace(/&(#x[0-9a-fA-F]+|#\d+|lt|gt|quot|apos|amp);/g, (m, e) => {
+    if (e === 'lt') return '<';
+    if (e === 'gt') return '>';
+    if (e === 'quot') return '"';
+    if (e === 'apos') return "'";
+    if (e === 'amp') return '&';
+    if (e[1] === 'x' || e[1] === 'X') return String.fromCodePoint(parseInt(e.slice(2), 16));
+    return String.fromCodePoint(parseInt(e.slice(1), 10));
+  });
+}
+
+function xlsxAttr(attrs, name) {
+  const m = String(attrs).match(new RegExp('(?:^|\\s)' + name + '="([^"]*)"'));
+  return m ? m[1] : null;
+}
+
+/* ---------- 行番号の写像（Excelの行挿入・削除と同じ規則） ----------
+ * op = { type: 'insert', at, n }      … at 行目の位置に n 行挿入（at 以降が下へ）
+ *    | { type: 'delete', from, to }   … from〜to 行目を削除（to より下が上へ） */
+function xlsxMapRow(r, op) {
+  if (op.type === 'insert') return r >= op.at ? r + op.n : r;
+  const k = op.to - op.from + 1;
+  if (r < op.from) return r;
+  if (r > op.to) return r - k;
+  return null; // 削除された行
+}
+function xlsxMapRowRange(a, b, op) {
+  if (op.type === 'insert') return [a >= op.at ? a + op.n : a, b >= op.at ? b + op.n : b];
+  const k = op.to - op.from + 1;
+  if (b < op.from) return [a, b];
+  if (a > op.to) return [a - k, b - k];
+  const na = a < op.from ? a : op.from;
+  const nb = b > op.to ? b - k : op.from - 1;
+  if (nb < na) return null; // 範囲ごと消えた
+  return [na, nb];
+}
+
+/* "A1" / "$A$1" / "A1:B5" / "5:9" を写像。null = 消滅（#REF!） */
+function xlsxMapAreaRef(ref, op) {
+  let m = ref.match(/^(\$?)([A-Z]{1,3})(\$?)(\d+)(?::(\$?)([A-Z]{1,3})(\$?)(\d+))?$/);
+  if (m) {
+    if (!m[6]) {
+      const nr = xlsxMapRow(+m[4], op);
+      return nr == null ? null : m[1] + m[2] + m[3] + nr;
+    }
+    const r1 = +m[4], r2 = +m[8];
+    const rr = xlsxMapRowRange(Math.min(r1, r2), Math.max(r1, r2), op);
+    if (!rr) return null;
+    return m[1] + m[2] + m[3] + rr[0] + ':' + m[5] + m[6] + m[7] + rr[1];
+  }
+  m = ref.match(/^(\$?)(\d+):(\$?)(\d+)$/);
+  if (m) {
+    const rr = xlsxMapRowRange(Math.min(+m[2], +m[4]), Math.max(+m[2], +m[4]), op);
+    return rr ? m[1] + rr[0] + ':' + m[3] + rr[1] : null;
+  }
+  return ref; // 列全体（A:A）などは行と無関係
+}
+function xlsxMapSqref(sqref, op) {
+  return String(sqref).trim().split(/\s+/).map(p => xlsxMapAreaRef(p, op)).filter(Boolean).join(' ');
+}
+
+/* 相対参照だけを (dRow, dCol) ずらす（共有数式の展開・行の複製用） */
+function xlsxTranslateRef(ref, dRow, dCol) {
+  const parts = ref.split(':');
+  const out = [];
+  for (const p of parts) {
+    let m = p.match(/^(\$?)([A-Z]{1,3})(\$?)(\d+)$/);
+    if (m) {
+      let col = xlsxColIndex(m[2]);
+      let row = +m[4];
+      if (!m[1]) col += dCol;
+      if (!m[3]) row += dRow;
+      if (col < 0 || row < 1) return null;
+      out.push(m[1] + xlsxColLetter(col) + m[3] + row);
+      continue;
+    }
+    m = p.match(/^(\$?)(\d+)$/);
+    if (m) {
+      let row = +m[2];
+      if (!m[1]) row += dRow;
+      if (row < 1) return null;
+      out.push(m[1] + row);
+      continue;
+    }
+    return ref;
+  }
+  return out.join(':');
+}
+
+/* 数式中のセル参照を書き換える。文字列リテラルの中は触らない。
+ * fn(ref, isSelfSheet, qualified) → 新しい参照 / null(#REF!) / undefined(変更なし) */
+const XLSX_REF_TOKEN = /("(?:[^"]|"")*")|(?<![A-Za-z0-9_.$!\]À-￿])((?:'(?:[^']|'')+'|[A-Za-z_À-￿][A-Za-z0-9_.À-￿]*)!)?(\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?|\$?\d+:\$?\d+)(?![A-Za-z0-9_(.!À-￿])/g;
+function xlsxRewriteFormula(formula, fn, ctx) {
+  return String(formula).replace(XLSX_REF_TOKEN, (m, str, sheet, ref) => {
+    if (str) return m;
+    let isSelf;
+    if (sheet) {
+      let nm = sheet.slice(0, -1);
+      if (nm[0] === "'") nm = nm.slice(1, -1).replace(/''/g, "'");
+      isSelf = ctx.selfName != null && nm === ctx.selfName;
+    } else {
+      isSelf = !!ctx.sameSheet;
+    }
+    const out = fn(ref, isSelf, !!sheet);
+    if (out === undefined) return m;
+    return (sheet || '') + (out === null ? '#REF!' : out);
+  });
+}
+function xlsxTranslateFormula(formula, dRow, dCol) {
+  return xlsxRewriteFormula(formula, (ref) => xlsxTranslateRef(ref, dRow, dCol), { sameSheet: true });
+}
+function xlsxShiftFormula(formula, op, ctx) {
+  return xlsxRewriteFormula(formula, (ref, isSelf) => (isSelf ? xlsxMapAreaRef(ref, op) : undefined), ctx);
+}
+
+/* XML 中の数式テキスト（<f>, <formula>, <formula1/2>, <xm:f>）すべてに fn を適用 */
+function xlsxMapFormulaTexts(xml, fn) {
+  return xml.replace(/<(f|formula|formula1|formula2|xm:f)\b([^>]*)>([\s\S]*?)<\/\1>/g, (m, tag, attrs, text) => {
+    if (text === '') return m;
+    return '<' + tag + attrs + '>' + xlsxEscape(fn(xlsxUnescape(text))) + '</' + tag + '>';
+  });
+}
+
+const XLSX_CELL_RE = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+const XLSX_ROW_RE = /<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g;
+
+/* 共有数式をすべて通常の数式に展開する（行の削除・複製で親子関係が壊れないように） */
+function xlsxUnshareFormulas(sheetXml) {
+  if (sheetXml.indexOf('t="shared"') < 0) return sheetXml;
+  const masters = {};
+  sheetXml.replace(XLSX_CELL_RE, (m, attrs, inner) => {
+    if (!inner) return m;
+    const fm = inner.match(/<f\b([^>]*)>([\s\S]*?)<\/f>/);
+    if (!fm || xlsxAttr(fm[1], 't') !== 'shared' || fm[2] === '') return m;
+    const si = xlsxAttr(fm[1], 'si');
+    const ref = xlsxAttr(attrs, 'r');
+    if (si != null && ref) masters[si] = Object.assign({ text: xlsxUnescape(fm[2]) }, xlsxRefParts(ref));
+    return m;
+  });
+  return sheetXml.replace(XLSX_CELL_RE, (m, attrs, inner) => {
+    if (!inner || inner.indexOf('<f') < 0) return m;
+    const ref = xlsxAttr(attrs, 'r');
+    const newInner = inner.replace(/<f\b([^>]*?)(?:\/>|>([\s\S]*?)<\/f>)/, (fm, fattrs) => {
+      if (xlsxAttr(fattrs, 't') !== 'shared') return fm;
+      const mst = masters[xlsxAttr(fattrs, 'si')];
+      if (!mst || !ref) return fm;
+      const me = xlsxRefParts(ref);
+      const text = xlsxTranslateFormula(mst.text, me.row - mst.row, me.col - mst.col);
+      const keep = fattrs.replace(/\s+(t|ref|si)="[^"]*"/g, '');
+      return '<f' + keep + '>' + xlsxEscape(text) + '</f>';
+    });
+    return '<c' + attrs + '>' + newInner + '</c>';
+  });
+}
+
+/* ---------- シート1枚に行操作を適用 ---------- */
+function xlsxApplyRowOpToSheet(sheetXml, op, ctx) {
+  let xml = sheetXml;
+  const fnSelf = (t) => xlsxShiftFormula(t, op, { sameSheet: true, selfName: ctx.selfName });
+
+  // 1) sheetData：行番号・セル番地・数式
+  xml = xml.replace(/<sheetData\b[^>]*>[\s\S]*?<\/sheetData>/, (sd) => sd.replace(XLSX_ROW_RE, (rowXml, rattrs, inner) => {
+    const r = parseInt(xlsxAttr(rattrs, 'r'), 10);
+    if (isNaN(r)) return rowXml;
+    const nr = xlsxMapRow(r, op);
+    if (nr == null) return ''; // 削除
+    let out = rowXml.replace(/^<row\b([^>]*?)\br="\d+"/, (mm, pre) => '<row' + pre + 'r="' + nr + '"');
+    out = out.replace(/<c\b([^>]*?)\br="([A-Z]+)\d+"/g, (mm, pre, col) => '<c' + pre + 'r="' + col + nr + '"');
+    // 配列数式の範囲
+    out = out.replace(/(<f\b[^>]*?\bref=")([^"]+)(")/g, (mm, a, ref, b) => a + (xlsxMapSqref(ref, op) || ref) + b);
+    return xlsxMapFormulaTexts(out, fnSelf);
+  }));
+
+  // 2) 結合セル（1セルになった・消えた結合は外す）
+  xml = xml.replace(/<mergeCells\b[^>]*>([\s\S]*?)<\/mergeCells>/, (all, inner) => {
+    const list = [];
+    (inner.match(/<mergeCell\b[^>]*\/>/g) || []).forEach(mc => {
+      const ref = xlsxAttr(mc, 'ref');
+      const nref = ref ? xlsxMapAreaRef(ref, op) : null;
+      if (!nref || nref.indexOf(':') < 0) return;
+      const [p1, p2] = nref.split(':');
+      if (p1 === p2) return;
+      list.push('<mergeCell ref="' + nref + '"/>');
+    });
+    if (list.length === 0) return '';
+    return '<mergeCells count="' + list.length + '">' + list.join('') + '</mergeCells>';
+  });
+
+  // 3) 条件付き書式（通常 + 拡張 x14）
+  xml = xml.replace(/<conditionalFormatting\b([^>]*)>([\s\S]*?)<\/conditionalFormatting>/g, (all, attrs, inner) => {
+    const sq = xlsxAttr(attrs, 'sqref');
+    const nsq = sq ? xlsxMapSqref(sq, op) : '';
+    if (!nsq) return '';
+    return '<conditionalFormatting' + attrs.replace(/sqref="[^"]*"/, 'sqref="' + nsq + '"') + '>' +
+      xlsxMapFormulaTexts(inner, fnSelf) + '</conditionalFormatting>';
+  });
+  xml = xml.replace(/<x14:conditionalFormatting\b([^>]*)>([\s\S]*?)<\/x14:conditionalFormatting>/g, (all, attrs, inner) => {
+    const sqm = inner.match(/<xm:sqref>([\s\S]*?)<\/xm:sqref>/);
+    const nsq = sqm ? xlsxMapSqref(sqm[1], op) : '';
+    if (!nsq) return '';
+    const body = xlsxMapFormulaTexts(inner, fnSelf).replace(/<xm:sqref>[\s\S]*?<\/xm:sqref>/, '<xm:sqref>' + nsq + '</xm:sqref>');
+    return '<x14:conditionalFormatting' + attrs + '>' + body + '</x14:conditionalFormatting>';
+  });
+
+  // 4) 入力規則
+  xml = xml.replace(/<dataValidations\b([^>]*)>([\s\S]*?)<\/dataValidations>/, (all, attrs, inner) => {
+    const list = [];
+    (inner.match(/<dataValidation\b[^>]*\/>|<dataValidation\b[^>]*>[\s\S]*?<\/dataValidation>/g) || []).forEach(dv => {
+      const sq = xlsxAttr(dv.match(/^<dataValidation\b[^>]*>/)[0], 'sqref');
+      const nsq = sq ? xlsxMapSqref(sq, op) : '';
+      if (!nsq) return;
+      list.push(xlsxMapFormulaTexts(dv.replace(/sqref="[^"]*"/, 'sqref="' + nsq + '"'), fnSelf));
+    });
+    if (list.length === 0) return '';
+    return '<dataValidations' + attrs.replace(/count="\d+"/, 'count="' + list.length + '"') + '>' + list.join('') + '</dataValidations>';
+  });
+
+  // 5) ハイパーリンク
+  xml = xml.replace(/<hyperlinks\b[^>]*>([\s\S]*?)<\/hyperlinks>/, (all, inner) => {
+    const list = [];
+    (inner.match(/<hyperlink\b[^>]*\/>/g) || []).forEach(h => {
+      const ref = xlsxAttr(h, 'ref');
+      const nref = ref ? xlsxMapSqref(ref, op) : '';
+      if (nref) list.push(h.replace(/\bref="[^"]*"/, 'ref="' + nref + '"'));
+    });
+    return list.length ? '<hyperlinks>' + list.join('') + '</hyperlinks>' : '';
+  });
+
+  // 6) 使用範囲・オートフィルタ・選択位置
+  xml = xml.replace(/(<dimension\b[^>]*\bref=")([^"]+)(")/, (m, a, ref, b) => a + (xlsxMapAreaRef(ref, op) || 'A1') + b);
+  xml = xml.replace(/(<autoFilter\b[^>]*\bref=")([^"]+)(")/, (m, a, ref, b) => a + (xlsxMapAreaRef(ref, op) || ref) + b);
+  xml = xml.replace(/<selection\b[^>]*\/>/g, (sel) => sel
+    .replace(/activeCell="[^"]*"/, (m) => { const v = xlsxMapAreaRef(m.slice(12, -1), op); return 'activeCell="' + (v || 'A1') + '"'; })
+    .replace(/sqref="[^"]*"/, (m) => { const v = xlsxMapSqref(m.slice(7, -1), op); return 'sqref="' + (v || 'A1') + '"'; }));
+
+  // 7) 改ページ（id = その行の下で改ページ）
+  xml = xml.replace(/<rowBreaks\b([^>]*)>([\s\S]*?)<\/rowBreaks>/, (all, attrs, inner) => {
+    const list = [];
+    (inner.match(/<brk\b[^>]*\/>/g) || []).forEach(b => {
+      const id = parseInt(xlsxAttr(b, 'id'), 10);
+      const nr = xlsxMapRow(id + 1, op);
+      if (nr == null || nr - 1 < 1) return;
+      list.push(b.replace(/\bid="\d+"/, 'id="' + (nr - 1) + '"'));
+    });
+    if (list.length === 0) return '';
+    const manual = list.filter(b => /\bman="1"/.test(b)).length;
+    return '<rowBreaks' + attrs.replace(/count="\d+"/, 'count="' + list.length + '"')
+      .replace(/manualBreakCount="\d+"/, 'manualBreakCount="' + manual + '"') + '>' + list.join('') + '</rowBreaks>';
+  });
+
+  return xml;
+}
+
+/* 行を挿入し、挿入した行は「挿入位置にあった行（=スタッフ欄の最終行）」の書式・行内数式を複製する */
+function xlsxInsertRowsAndClone(sheetXml, at, n, ctx) {
+  const op = { type: 'insert', at, n };
+  let xml = xlsxApplyRowOpToSheet(sheetXml, op, ctx);
+  const protoR = at + n; // 元の at 行は押し下げられてここにある
+  const rowRe = new RegExp('<row\\b[^>]*?\\br="' + protoR + '"[^>]*?(?:\\/>|>[\\s\\S]*?<\\/row>)');
+  const pm = xml.match(rowRe);
+
+  let clones = '';
+  for (let i = 0; i < n; i++) {
+    const nr = at + i;
+    if (!pm) { clones += '<row r="' + nr + '"></row>'; continue; }
+    let rx = pm[0];
+    if (/\/>$/.test(rx)) rx = rx.replace(/\/>$/, '></row>');
+    rx = rx.replace(/^<row\b([^>]*?)\br="\d+"/, (m, pre) => '<row' + pre + 'r="' + nr + '"');
+    rx = rx.replace(XLSX_CELL_RE, (m, attrs, inner) => {
+      const a = attrs.replace(/\br="([A-Z]+)\d+"/, (mm, col) => 'r="' + col + nr + '"').replace(/\s+t="[^"]*"/, '');
+      const fm = inner && inner.match(/<f\b([^>]*?)>([\s\S]*?)<\/f>/);
+      if (fm && fm[2] !== '' && xlsxAttr(fm[1], 't') !== 'array') {
+        // 行ごとの数式（例: =COUNTIF(E25:AI25,"休")）は行をずらして引き継ぐ
+        const text = xlsxTranslateFormula(xlsxUnescape(fm[2]), nr - protoR, 0);
+        return '<c' + a + '><f>' + xlsxEscape(text) + '</f></c>';
+      }
+      return '<c' + a + '/>'; // 値は空・書式（罫線・塗り）は維持
+    });
+    clones += rx;
+  }
+  if (pm) xml = xml.replace(pm[0], () => clones + pm[0]);
+  else xml = xml.replace('</sheetData>', () => clones + '</sheetData>');
+
+  // 雛形行の中だけで閉じた横結合（例: B25:C25）は新しい行にも作る
+  if (pm) {
+    xml = xml.replace(/<mergeCells\b[^>]*>([\s\S]*?)<\/mergeCells>/, (all, inner) => {
+      const add = [];
+      (inner.match(/<mergeCell\b[^>]*\/>/g) || []).forEach(mc => {
+        const m = (xlsxAttr(mc, 'ref') || '').match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+        if (!m || +m[2] !== protoR || +m[4] !== protoR) return;
+        for (let i = 0; i < n; i++) add.push('<mergeCell ref="' + m[1] + (at + i) + ':' + m[3] + (at + i) + '"/>');
+      });
+      if (add.length === 0) return all;
+      const total = (inner.match(/<mergeCell\b/g) || []).length + add.length;
+      return '<mergeCells count="' + total + '">' + inner + add.join('') + '</mergeCells>';
+    });
+  }
+  return xml;
+}
+
+/* ---------- 図形・コメント・テーブルの追随 ---------- */
+function xlsxResolvePartPath(baseDir, target) {
+  if (target.startsWith('/')) return target.slice(1);
+  const parts = (baseDir + target).split('/');
+  const out = [];
+  for (const p of parts) {
+    if (p === '..') out.pop();
+    else if (p !== '.' && p !== '') out.push(p);
+  }
+  return out.join('/');
+}
+function xlsxSheetRelParts(files, sheetPath) {
+  const dir = sheetPath.slice(0, sheetPath.lastIndexOf('/') + 1);
+  const relsPath = dir + '_rels/' + sheetPath.slice(dir.length) + '.rels';
+  const rels = files[relsPath] || '';
+  const out = [];
+  (rels.match(/<Relationship\b[^>]*\/>/g) || []).forEach(r => {
+    const type = xlsxAttr(r, 'Type') || '';
+    const target = xlsxAttr(r, 'Target') || '';
+    if (xlsxAttr(r, 'TargetMode') === 'External') return;
+    out.push({ type: type.slice(type.lastIndexOf('/') + 1), path: xlsxResolvePartPath(dir, target) });
+  });
+  return out;
+}
+function xlsxApplyRowOpToDrawing(xml, op) {
+  // 接頭辞（Excelは "xdr:"、ツールによっては無し）に依存しないように取り出す
+  const pm = xml.match(/<([A-Za-z0-9]+:)?wsDr\b/);
+  const P = pm && pm[1] ? pm[1] : '';
+  const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const p = esc(P);
+  const mapAnchorRow = (r0) => {
+    const nr = xlsxMapRow(r0 + 1, op);
+    return (nr == null ? op.from : nr) - 1; // 削除行にかかる図形は削除位置へ寄せる
+  };
+  const rowOf = (block, tag) => {
+    const m = block.match(new RegExp('<' + p + tag + '>[\\s\\S]*?<' + p + 'row>(\\d+)</' + p + 'row>'));
+    return m ? parseInt(m[1], 10) : null;
+  };
+  const setRow = (block, tag, v) => block.replace(
+    new RegExp('(<' + p + tag + '>[\\s\\S]*?<' + p + 'row>)\\d+(</' + p + 'row>)'), '$1' + v + '$2');
+  xml = xml.replace(new RegExp('<' + p + 'twoCellAnchor\\b([^>]*)>([\\s\\S]*?)</' + p + 'twoCellAnchor>', 'g'), (all, attrs, inner) => {
+    const editAs = xlsxAttr(attrs, 'editAs');
+    if (editAs === 'absolute') return all; // セルに合わせて動かない設定
+    const f = rowOf(inner, 'from'), t = rowOf(inner, 'to');
+    if (f == null) return all;
+    const nf = mapAnchorRow(f);
+    let body = setRow(inner, 'from', nf);
+    if (t != null) body = setRow(body, 'to', editAs === 'oneCell' ? t + (nf - f) : Math.max(nf, mapAnchorRow(t)));
+    return '<' + P + 'twoCellAnchor' + attrs + '>' + body + '</' + P + 'twoCellAnchor>';
+  });
+  xml = xml.replace(new RegExp('<' + p + 'oneCellAnchor\\b([^>]*)>([\\s\\S]*?)</' + p + 'oneCellAnchor>', 'g'), (all, attrs, inner) => {
+    const f = rowOf(inner, 'from');
+    if (f == null) return all;
+    return '<' + P + 'oneCellAnchor' + attrs + '>' + setRow(inner, 'from', mapAnchorRow(f)) + '</' + P + 'oneCellAnchor>';
+  });
+  return xml;
+}
+function xlsxApplyRowOpToComments(xml, op, removedCells) {
+  return xml.replace(/<comment\b([^>]*)>([\s\S]*?)<\/comment>/g, (all, attrs, inner) => {
+    const ref = xlsxAttr(attrs, 'ref');
+    const nref = ref ? xlsxMapAreaRef(ref, op) : null;
+    if (!nref) { if (ref) removedCells.push(ref); return ''; }
+    return '<comment' + attrs.replace(/\bref="[^"]*"/, 'ref="' + nref + '"') + '>' + inner + '</comment>';
+  });
+}
+function xlsxApplyRowOpToVml(xml, op, removedCells) {
+  const removed = new Set(removedCells.map(r => { const p = xlsxRefParts(r); return (p.row - 1) + ',' + p.col; }));
+  return xml.replace(/<v:shape\b[\s\S]*?<\/v:shape>/g, (shape) => {
+    const rm = shape.match(/<x:Row>(\d+)<\/x:Row>/);
+    const cm = shape.match(/<x:Column>(\d+)<\/x:Column>/);
+    if (!rm) return shape;
+    const r0 = parseInt(rm[1], 10);
+    if (cm && removed.has(r0 + ',' + parseInt(cm[1], 10))) return '';
+    const nr = xlsxMapRow(r0 + 1, op);
+    if (nr == null) return '';
+    const delta = (nr - 1) - r0;
+    let out = shape.replace(/<x:Row>\d+<\/x:Row>/, '<x:Row>' + (nr - 1) + '</x:Row>');
+    out = out.replace(/<x:Anchor>([^<]*)<\/x:Anchor>/, (m, a) => {
+      const v = a.split(',').map(x => x.trim());
+      if (v.length !== 8) return m;
+      v[2] = String(Math.max(0, parseInt(v[2], 10) + delta));
+      v[6] = String(Math.max(0, parseInt(v[6], 10) + delta));
+      return '<x:Anchor>' + v.join(', ') + '</x:Anchor>';
+    });
+    return out;
+  });
+}
+
+/* ブック全体に行操作を反映（対象シート・他シートの参照・名前定義・図形・コメント・テーブル） */
+function xlsxApplyRowOpToPackage(files, sheetPath, op, ctx) {
+  const sheetPaths = Object.keys(files).filter(p => /^xl\/worksheets\/[^/]+\.xml$/.test(p));
+  // 他のシートからこのシートへの参照
+  sheetPaths.forEach(p => {
+    if (p === sheetPath) return;
+    if (ctx.selfName == null || files[p].indexOf(ctx.selfName) < 0) return;
+    files[p] = xlsxMapFormulaTexts(xlsxUnshareFormulas(files[p]),
+      (t) => xlsxShiftFormula(t, op, { sameSheet: false, selfName: ctx.selfName }));
+  });
+  // 名前定義（印刷範囲・印刷タイトルなど）
+  if (files['xl/workbook.xml']) {
+    files['xl/workbook.xml'] = files['xl/workbook.xml'].replace(/<definedName\b([^>]*)>([\s\S]*?)<\/definedName>/g, (all, attrs, text) => {
+      const nt = xlsxShiftFormula(xlsxUnescape(text), op, { sameSheet: false, selfName: ctx.selfName });
+      return '<definedName' + attrs + '>' + xlsxEscape(nt) + '</definedName>';
+    });
+  }
+  // シートに付属するパーツ
+  const removedComments = [];
+  const parts = xlsxSheetRelParts(files, sheetPath);
+  parts.filter(p => p.type === 'drawing').forEach(p => { if (files[p.path]) files[p.path] = xlsxApplyRowOpToDrawing(files[p.path], op); });
+  parts.filter(p => p.type === 'comments').forEach(p => { if (files[p.path]) files[p.path] = xlsxApplyRowOpToComments(files[p.path], op, removedComments); });
+  parts.filter(p => p.type === 'vmlDrawing').forEach(p => { if (files[p.path]) files[p.path] = xlsxApplyRowOpToVml(files[p.path], op, removedComments); });
+  parts.filter(p => p.type === 'table').forEach(p => {
+    if (!files[p.path]) return;
+    files[p.path] = files[p.path].replace(/(<(?:table|autoFilter)\b[^>]*?\bref=")([^"]+)(")/g,
+      (m, a, ref, b) => a + (xlsxMapAreaRef(ref, op) || ref) + b);
+  });
+}
+
+/* ---------- 共有文字列 ---------- */
+function xlsxSstText(si) {
+  const body = si.replace(/<rPh\b[\s\S]*?<\/rPh>/g, ''); // ふりがなは除く
+  let s = '';
+  body.replace(/<t\b[^>]*>([\s\S]*?)<\/t>|<t\b[^>]*\/>/g, (m, t) => { s += t ? xlsxUnescape(t) : ''; return m; });
+  return s;
+}
+function createXlsxSharedStrings(xml) {
+  const items = [];
+  const texts = [];
+  const map = new Map();
+  let openTag = '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">';
+  if (xml) {
+    const om = xml.match(/<sst\b[^>]*?(?:\/>|>)/);
+    if (om) openTag = om[0].replace(/\/>$/, '>');
+    (xml.match(/<si\b[^>]*\/>|<si\b[^>]*>[\s\S]*?<\/si>/g) || []).forEach((si, i) => {
+      items.push(si);
+      const t = xlsxSstText(si);
+      texts.push(t);
+      if (!/<r\b/.test(si) && !map.has(t)) map.set(t, i);
+    });
+  }
+  return {
+    texts,
+    addRaw(siInner) { // 書式つき（リッチテキスト）はそのまま1件として追加
+      items.push('<si>' + siInner + '</si>');
+      texts.push(xlsxSstText('<si>' + siInner + '</si>'));
+      return items.length - 1;
+    },
+    add(text) {
+      const t = String(text);
+      if (map.has(t)) return map.get(t);
+      const preserve = /^\s|\s$|\n/.test(t) ? ' xml:space="preserve"' : '';
+      items.push('<si><t' + preserve + '>' + xlsxEscape(t) + '</t></si>');
+      texts.push(t);
+      map.set(t, items.length - 1);
+      return items.length - 1;
+    },
+    output(totalRefs) {
+      let open = openTag.replace(/\s+(count|uniqueCount)="\d+"/g, '');
+      open = open.replace(/^<sst\b/, '<sst count="' + totalRefs + '" uniqueCount="' + items.length + '"');
+      return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + open + items.join('') + '</sst>';
+    },
+  };
+}
+
+/* ---------- セル読み取り ---------- */
+function xlsxReadRowCells(sheetXml, r, sstTexts) {
+  const rowRe = new RegExp('<row\\b[^>]*?\\br="' + r + '"[^>]*?(?:\\/>|>([\\s\\S]*?)<\\/row>)');
+  const m = sheetXml.match(rowRe);
+  if (!m) return null;
+  const cells = {};
+  (m[1] || '').replace(XLSX_CELL_RE, (cm, attrs, inner) => {
+    const ref = xlsxAttr(attrs, 'r');
+    if (!ref) return cm;
+    const p = xlsxRefParts(ref);
+    const t = xlsxAttr(attrs, 't');
+    const s = xlsxAttr(attrs, 's');
+    const hasF = !!inner && /<f\b/.test(inner);
+    let text = '';
+    if (inner && !hasF) {
+      if (t === 's') { const v = inner.match(/<v>([\s\S]*?)<\/v>/); text = v ? (sstTexts[parseInt(v[1], 10)] || '') : ''; }
+      else if (t === 'inlineStr') text = xlsxSstText(inner);
+      else { const v = inner.match(/<v>([\s\S]*?)<\/v>/); text = v ? xlsxUnescape(v[1]) : ''; }
+    }
+    cells[p.col] = { ref, col: p.col, s: s == null ? 0 : parseInt(s, 10), t, hasF, text: String(text).trim(), isNum: (!t || t === 'n') && !hasF && /<v>/.test(inner || '') };
+    return cm;
+  });
+  return cells;
+}
+function xlsxParseMerges(sheetXml) {
+  const out = [];
+  (sheetXml.match(/<mergeCell\b[^>]*\/>/g) || []).forEach(mc => {
+    const m = (xlsxAttr(mc, 'ref') || '').match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+    if (m) out.push({ c1: xlsxColIndex(m[1]), r1: +m[2], c2: xlsxColIndex(m[3]), r2: +m[4] });
+  });
+  return out;
+}
+function xlsxStyleHasBorder(stylesXml) {
+  const sec = (tag) => { const m = stylesXml.match(new RegExp('<' + tag + '\\b[^>]*>([\\s\\S]*?)</' + tag + '>')); return m ? m[1] : ''; };
+  const borders = (sec('borders').match(/<border\b[^>]*\/>|<border\b[^>]*>[\s\S]*?<\/border>/g) || [])
+    .map(b => /\bstyle="(?!none)[^"]+"/.test(b));
+  const xfs = (sec('cellXfs').match(/<xf\b[^>]*\/>|<xf\b[^>]*>[\s\S]*?<\/xf>/g) || [])
+    .map(x => { const id = xlsxAttr(x.match(/^<xf\b[^>]*>/)[0], 'borderId'); return !!borders[id == null ? 0 : parseInt(id, 10)]; });
+  return (sIdx) => !!xfs[sIdx || 0];
+}
+
+/* ---------- スタッフ欄の自動検出 ----------
+ * startRow から下へ「スタッフ行らしい行」が続く数を数える。次のどれかで終わり:
+ *  - 行が無い／セルが1つも無い
+ *  - A〜D列に「合計・計・人数・出勤数・備考・※」などの見出し
+ *  - 1行目に無かった列に数式がある（合計行・集計行）
+ *  - 名前列の罫線の有無が1行目と違い、かつ名前が空（区切りの空行）
+ *  - 名前列の結合のしかたが1行目と違う
+ * 前月に出力したファイル（名前が入っている）をテンプレにしても正しく数えられる。 */
+const XLSX_SUMMARY_RE = /^(合計|小計|総計|計|集計|人数|出勤|休日|備考|※|【)/;
+function xlsxAnalyzeStaffBlock(sheetXml, stylesXml, sstTexts, layout) {
+  const startRow = layout.startRow;
+  const nameCol = layout.nameCol;          // 0-based（B=1）
+  const dayCol0 = layout.dayStartCol;      // 0-based（E=4）
+  const hasBorder = xlsxStyleHasBorder(stylesXml || '');
+  const merges = xlsxParseMerges(sheetXml);
+  const mergeSig = (r, c) => {
+    const m = merges.find(mm => r >= mm.r1 && r <= mm.r2 && c >= mm.c1 && c <= mm.c2);
+    return m ? (m.c2 - m.c1 + 1) + 'x' + (m.r2 - m.r1 + 1) : '1x1';
+  };
+
+  const first = xlsxReadRowCells(sheetXml, startRow, sstTexts);
+  if (!first || Object.keys(first).length === 0) {
+    return { startRow, rows: 0, filled: 0, numbered: false };
+  }
+  const rowFormulaCols = new Set(Object.values(first).filter(c => c.hasF).map(c => c.col));
+  const firstBorder = first[nameCol] ? hasBorder(first[nameCol].s) : false;
+  const firstMerge = mergeSig(startRow, nameCol);
+
+  let rows = 0, filled = 0;
+  const aNums = [];
+  for (let r = startRow; r < startRow + 300; r++) {
+    const cells = r === startRow ? first : xlsxReadRowCells(sheetXml, r, sstTexts);
+    if (!cells || Object.keys(cells).length === 0) break;
+    if (r !== startRow) {
+      let stop = false;
+      for (let c = 0; c <= Math.max(nameCol, dayCol0 - 1); c++) {
+        if (cells[c] && cells[c].text && XLSX_SUMMARY_RE.test(cells[c].text)) { stop = true; break; }
+      }
+      if (stop) break;
+      if (Object.values(cells).some(c => c.hasF && !rowFormulaCols.has(c.col))) break;
+      const nc = cells[nameCol];
+      const nameText = nc ? nc.text : '';
+      if (!nameText && firstBorder && !(nc && hasBorder(nc.s))) break;
+      if (mergeSig(r, nameCol) !== firstMerge) break;
+    }
+    rows++;
+    if (cells[nameCol] && cells[nameCol].text) filled++;
+    const a = cells[0];
+    aNums.push(a && a.isNum && /^\d+$/.test(a.text) ? parseInt(a.text, 10) : (a && a.text ? NaN : null));
+  }
+  // A列が 1,2,3… の連番なら「No.欄」とみなして出力時に振り直す
+  const nums = aNums.filter(v => v != null);
+  const numbered = nums.length >= 2 && nums.every((v, i) => v === i + 1) && aNums.slice(0, nums.length).every(v => v != null);
+  return { startRow, rows, filled, numbered };
+}
+
+/* ---------- セル書き込み（数式セルは触らない・文字列は共有文字列） ---------- */
+function xlsxBuildCellXml(ref, spec, sst) {
+  const sAttr = (spec.styleIdx != null) ? ' s="' + spec.styleIdx + '"' : '';
+  if (spec.dateSerial != null) return '<c r="' + ref + '"' + sAttr + '><v>' + spec.dateSerial + '</v></c>';
+  if (spec.number != null) return '<c r="' + ref + '"' + sAttr + '><v>' + spec.number + '</v></c>';
   const v = spec.value == null ? '' : String(spec.value);
   if (v === '') return '<c r="' + ref + '"' + sAttr + '/>';
+  if (sst) return '<c r="' + ref + '"' + sAttr + ' t="s"><v>' + sst.add(v) + '</v></c>';
   return '<c r="' + ref + '"' + sAttr + ' t="inlineStr"><is><t xml:space="preserve">' + xlsxEscape(v) + '</t></is></c>';
 }
 
 /* セル値の一括書き換え。既存セルは値だけ差し替え（s属性維持）、
- * 無いセル・行は正しい位置に挿入する。styleIdx未指定なら元スタイルを維持。 */
-function xlsxSetCells(sheetXml, cellSpecs) {
+ * 無いセル・行は正しい位置に挿入する。★数式の入ったセルはスキップして opts.skipped に積む */
+function xlsxSetCells(sheetXml, cellSpecs, opts) {
+  const o = opts || {};
+  const sst = o.sst || null;
+  const skipped = o.skipped || [];
   const byRow = {};
   Object.keys(cellSpecs).forEach(ref => {
     const { row } = xlsxRefParts(ref);
@@ -3921,7 +4737,7 @@ function xlsxSetCells(sheetXml, cellSpecs) {
 
   let xml = sheetXml;
   Object.keys(byRow).map(Number).sort((a, b) => a - b).forEach(rowNum => {
-    const rowRe = new RegExp('<row r="' + rowNum + '"[^>]*/>|<row r="' + rowNum + '"[^>]*>[\\s\\S]*?</row>');
+    const rowRe = new RegExp('<row\\b[^>]*?\\br="' + rowNum + '"[^>]*?(?:\\/>|>[\\s\\S]*?<\\/row>)');
     const rowM = xml.match(rowRe);
     let rowXml;
     if (rowM) {
@@ -3933,27 +4749,24 @@ function xlsxSetCells(sheetXml, cellSpecs) {
 
     byRow[rowNum].sort((a, b) => xlsxRefParts(a).col - xlsxRefParts(b).col).forEach(ref => {
       const spec = cellSpecs[ref];
-      const cellRe = new RegExp('<c r="' + ref + '"[^>]*/>|<c r="' + ref + '"[^>]*>[\\s\\S]*?</c>');
+      const cellRe = new RegExp('<c\\b[^>]*?\\br="' + ref + '"[^>]*?(?:\\/>|>[\\s\\S]*?<\\/c>)');
       const cm = rowXml.match(cellRe);
+      if (cm && /<f\b/.test(cm[0])) { skipped.push(ref); return; } // 数式は保持
       let styleIdx = spec.styleIdx;
       if (styleIdx === undefined) {
-        if (cm) {
-          const sm = cm[0].match(/ s="(\d+)"/);
-          styleIdx = sm ? parseInt(sm[1]) : null;
-        } else {
-          styleIdx = null;
-        }
+        const sm = cm && cm[0].match(/^<c\b[^>]*?\bs="(\d+)"/);
+        styleIdx = sm ? parseInt(sm[1]) : null;
       }
-      const newCell = xlsxBuildCellXml(ref, { value: spec.value, dateSerial: spec.dateSerial, styleIdx });
+      const newCell = xlsxBuildCellXml(ref, Object.assign({}, spec, { styleIdx }), sst);
       if (cm) {
         rowXml = rowXml.replace(cm[0], () => newCell);
       } else {
         const myCol = xlsxRefParts(ref).col;
-        const cells = rowXml.match(/<c r="[A-Z]+\d+"[^>]*\/>|<c r="[A-Z]+\d+"[^>]*>[\s\S]*?<\/c>/g) || [];
+        const cells = rowXml.match(/<c\b[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g) || [];
         let inserted = false;
         for (const c of cells) {
-          const cref = c.match(/r="([A-Z]+\d+)"/)[1];
-          if (xlsxRefParts(cref).col > myCol) {
+          const crm = c.match(/\br="([A-Z]+\d+)"/);
+          if (crm && xlsxRefParts(crm[1]).col > myCol) {
             rowXml = rowXml.replace(c, () => newCell + c);
             inserted = true;
             break;
@@ -3966,10 +4779,11 @@ function xlsxSetCells(sheetXml, cellSpecs) {
     if (rowM) {
       xml = xml.replace(rowM[0], () => rowXml);
     } else {
-      const rows = xml.match(/<row r="\d+"[^>]*(?:\/>|>)/g) || [];
+      const rows = xml.match(/<row\b[^>]*?(?:\/>|>)/g) || [];
       let insertBefore = null;
       for (const r of rows) {
-        if (parseInt(r.match(/r="(\d+)"/)[1]) > rowNum) { insertBefore = r; break; }
+        const rr = parseInt(xlsxAttr(r, 'r'), 10);
+        if (rr > rowNum) { insertBefore = r; break; }
       }
       if (insertBefore) xml = xml.replace(insertBefore, () => rowXml + insertBefore);
       else xml = xml.replace('</sheetData>', () => rowXml + '</sheetData>');
@@ -3978,162 +4792,252 @@ function xlsxSetCells(sheetXml, cellSpecs) {
   return xml;
 }
 
-/* --- テンプレの人数とアプリの人数がズレたときの行調整 --- */
-
-// 指定セルに値が入っているか（<v> or <is>）
-function xlsxCellHasValue(sheetXml, ref) {
-  const re = new RegExp('<c r="' + ref + '"[^>]*/>|<c r="' + ref + '"[^>]*>[\\s\\S]*?</c>');
-  const m = sheetXml.match(re);
-  if (!m) return false;
-  return /<v>|<is>/.test(m[0]);
-}
-
-/* テンプレの「スタッフ行ブロック」の行数を推定する。
- * startRow から下へ、行が存在し かつ 名前列が空 の間を数える。
- * （合計行など、名前列に文字が入っている行が出たらそこでブロック終了とみなす） */
-function xlsxDetectStaffBlockRows(sheetXml, startRow, nameColLetter, maxScan) {
-  const limit = maxScan || 200;
-  let n = 0;
-  for (let r = startRow; r < startRow + limit; r++) {
-    const rowRe = new RegExp('<row r="' + r + '"[^>]*(?:/>|>)');
-    if (!rowRe.test(sheetXml)) break;               // 行そのものが無い
-    if (xlsxCellHasValue(sheetXml, nameColLetter + r)) break; // 見出し・合計行など
-    n++;
-  }
-  return n;
-}
-
-/* sheetData 内の行番号を delta だけ下へずらす（fromRow 以降が対象） */
-function xlsxShiftRowsDown(sheetXml, fromRow, delta) {
-  if (!(delta > 0)) return sheetXml;
-  const sdRe = /<sheetData\b[^>]*>[\s\S]*?<\/sheetData>/;
-  const m = sheetXml.match(sdRe);
-  if (!m) return sheetXml;
-  let sd = m[0];
-
-  // <row r="N" ...>
-  sd = sd.replace(/<row\b[^>]*?\br="(\d+)"/g, (full, n) => {
-    const r = parseInt(n, 10);
-    if (r < fromRow) return full;
-    return full.replace('r="' + n + '"', 'r="' + (r + delta) + '"');
-  });
-  // <c r="XN" ...>
-  sd = sd.replace(/<c\b[^>]*?\br="([A-Z]+)(\d+)"/g, (full, col, n) => {
-    const r = parseInt(n, 10);
-    if (r < fromRow) return full;
-    return full.replace('r="' + col + n + '"', 'r="' + col + (r + delta) + '"');
-  });
-
-  return sheetXml.replace(m[0], () => sd);
-}
-
-/* mergeCells / dimension / sqref の参照範囲も同じだけ下へずらす */
-function xlsxShiftRefsDown(sheetXml, fromRow, delta) {
-  if (!(delta > 0)) return sheetXml;
-  const shiftRef = (ref) => ref.replace(/([A-Z]+)(\d+)/g, (mm, col, n) => {
-    const r = parseInt(n, 10);
-    return col + (r >= fromRow ? r + delta : r);
-  });
-  let xml = sheetXml;
-  xml = xml.replace(/<mergeCell ref="([^"]+)"/g, (f, ref) => '<mergeCell ref="' + shiftRef(ref) + '"');
-  xml = xml.replace(/<dimension ref="([^"]+)"/g, (f, ref) => '<dimension ref="' + shiftRef(ref) + '"');
-  xml = xml.replace(/sqref="([^"]+)"/g, (f, ref) => 'sqref="' + shiftRef(ref) + '"');
-  return xml;
-}
-
-/* protoRow の行を「値だけ消してスタイルは維持」した形で複製し、直後に挿入する */
-function xlsxCloneRowsFrom(sheetXml, protoRow, newRowNums) {
-  if (!newRowNums || newRowNums.length === 0) return sheetXml;
-  const rowRe = new RegExp('<row r="' + protoRow + '"[^>]*/>|<row r="' + protoRow + '"[^>]*>[\\s\\S]*?</row>');
-  const m = sheetXml.match(rowRe);
-  let proto;
-  if (m) {
-    proto = m[0];
-    if (/\/>$/.test(proto)) proto = proto.replace(/\/>$/, '></row>');
-    // セルは属性（スタイル）だけ残して空にする
-    proto = proto.replace(/<c\b([^>]*?)(?:\/>|>[\s\S]*?<\/c>)/g, (full, attrs) => {
-      const a = attrs.replace(/\s+t="[^"]*"/g, ''); // 値が無いので型属性は落とす
-      return '<c' + a + '/>';
-    });
-  } else {
-    proto = '<row r="' + protoRow + '"></row>';
-  }
-
-  let out = '';
-  newRowNums.forEach(rn => {
-    let rx = proto.replace(/<row\b[^>]*?\br="\d+"/, (full) => full.replace(/r="\d+"/, 'r="' + rn + '"'));
-    rx = rx.replace(/<c\b([^>]*?)\br="([A-Z]+)\d+"/g, (f, pre, col) => '<c' + pre + 'r="' + col + rn + '"');
-    out += rx;
-  });
-
-  if (m) return sheetXml.replace(m[0], () => m[0] + out);
-  return sheetXml.replace('</sheetData>', () => out + '</sheetData>');
-}
-
-/* シフトデータからセル書き込み指定を組み立てる（純粋関数・テスト可能）
- * 戻り値: { 'B6': { value, fontRgb?, fillRgb? }, 'A2': { dateSerial }, ... } */
+/* シフトデータからセル書き込み指定を組み立てる（純粋関数）
+ * 戻り値: { 'B6': { value, fontRgb?, fillRgb?, dayCell? }, 'A2': { dateSerial }, ... } */
 function buildExcelCellSpecs(year, month, days, orderedStaff, groups, getShiftFn, opts) {
-  const GROUP_FILL = { a: 'FFFFF7DC', b: 'FFE4F8EB', c: 'FFDBEAFE', d: 'FFEDE9FE' };
   const o = opts || {};
-  const startRow = o.startRow || 6;      // 1-based
+  const startRow = o.startRow || 6;       // 1-based
   const startDayCol = o.startDayCol || 5; // E列（1-based）
-  // クリア対象＝テンプレのスタッフ行ブロック。人数が多ければ全員分まで広げる
-  const blockRows = Math.max(o.blockRows || 20, orderedStaff.length);
+  const blockRows = Math.max(o.blockRows || 0, orderedStaff.length);
 
   const specs = {};
   // A2: 月日（テンプレの表示形式そのまま・シリアル値で書く）
   specs['A2'] = { dateSerial: Math.round((Date.UTC(year, month - 1, 1) - Date.UTC(1899, 11, 30)) / 86400000) };
 
-  // 既存スタッフ行をクリア（値のみ空に・スタイル維持）
+  // スタッフ欄をクリア（値のみ空に・スタイル維持）
   for (let r = startRow; r < startRow + blockRows; r++) {
-    specs['B' + r] = { value: '' };
-    specs['C' + r] = { value: '' };
-    specs['D' + r] = { value: '' };
-    for (let dc = 0; dc < 31; dc++) {
-      specs[xlsxColLetter(startDayCol - 1 + dc) + r] = { value: '' };
+    specs['B' + r] = { value: '', cleanFill: true };
+    specs['C' + r] = { value: '', cleanFill: true };
+    specs['D' + r] = { value: '', cleanFill: true };
+    for (let dc = 0; dc < XLSX_DAY_COLS; dc++) {
+      specs[xlsxColLetter(startDayCol - 1 + dc) + r] = { value: '', cleanFill: true, dayCell: true };
     }
+    if (o.numbered) specs['A' + r] = { value: '' };
   }
 
-  // スタッフ書き込み（★人数分すべて出力する）
   orderedStaff.forEach((s, idx) => {
     const rowNum = startRow + idx;
     const group = groups.find(g => g.id === s.groupId);
-    const rowFill = group ? GROUP_FILL[group.color] : null;
+    const rowFill = group ? XLSX_GROUP_FILL[group.color] : null;
 
-    specs['B' + rowNum] = { value: s.name, fillRgb: rowFill || undefined };
-    specs['C' + rowNum] = { value: formatTime(s.startHour, s.startMin), fillRgb: rowFill || undefined };
-    specs['D' + rowNum] = { value: formatTime(s.endHour, s.endMin), fillRgb: rowFill || undefined };
+    if (o.numbered) specs['A' + rowNum] = { number: idx + 1 };
+    specs['B' + rowNum] = { value: s.name, fillRgb: rowFill || undefined, cleanFill: true };
+    specs['C' + rowNum] = { value: formatTime(s.startHour, s.startMin), fillRgb: rowFill || undefined, cleanFill: true };
+    specs['D' + rowNum] = { value: formatTime(s.endHour, s.endMin), fillRgb: rowFill || undefined, cleanFill: true };
 
     for (let d = 1; d <= days; d++) {
       const t = getShiftFn(s.id, d);
       const def = SHIFT_TYPES[t] || SHIFT_TYPES[''];
       const ref = xlsxColLetter(startDayCol - 1 + (d - 1)) + rowNum;
-      const spec = { value: def.excel || '' };
+      const spec = { value: def.excel || '', cleanFill: true, dayCell: true };
       // 希望休は赤字。ICスタッフは休みの種類を問わず赤字
-      if (t === 'holiday' || (s.category === 'ICスタッフ' && def.countAsHoliday)) {
-        spec.fontRgb = 'FFFF0000';
-      }
+      if (t === 'holiday' || (s.category === 'ICスタッフ' && def.countAsHoliday)) spec.fontRgb = XLSX_RED;
       if (rowFill) spec.fillRgb = rowFill;
       specs[ref] = spec;
     }
   });
-
   return specs;
+}
+
+/* 計算チェーンを削除し、開いたときに全数式を再計算させる */
+function xlsxDropCalcChain(files, removed) {
+  const ct = files['[Content_Types].xml'];
+  if (files['xl/calcChain.xml'] !== undefined) { delete files['xl/calcChain.xml']; removed.push('xl/calcChain.xml'); }
+  if (ct) files['[Content_Types].xml'] = ct.replace(/<Override\b[^>]*PartName="\/xl\/calcChain\.xml"[^>]*\/>/g, '');
+  const relsPath = 'xl/_rels/workbook.xml.rels';
+  if (files[relsPath]) files[relsPath] = files[relsPath].replace(/<Relationship\b[^>]*Target="[^"]*calcChain\.xml"[^>]*\/>/g, '');
+  let wb = files['xl/workbook.xml'];
+  if (!wb) return;
+  if (/<calcPr\b/.test(wb)) {
+    wb = wb.replace(/<calcPr\b([^>]*?)(\/?)>/, (m, attrs, slash) => {
+      const a = /fullCalcOnLoad="/.test(attrs) ? attrs.replace(/fullCalcOnLoad="[^"]*"/, 'fullCalcOnLoad="1"') : attrs + ' fullCalcOnLoad="1"';
+      return '<calcPr' + a + slash + '>';
+    });
+  } else if (/<\/definedNames>/.test(wb)) {
+    wb = wb.replace('</definedNames>', '</definedNames><calcPr fullCalcOnLoad="1"/>');
+  } else {
+    wb = wb.replace('</sheets>', '</sheets><calcPr fullCalcOnLoad="1"/>');
+  }
+  files['xl/workbook.xml'] = wb;
+}
+
+/* 共有文字列パーツの場所（無ければ作る） */
+function xlsxEnsureSharedStringsPart(files) {
+  const relsPath = 'xl/_rels/workbook.xml.rels';
+  const rels = files[relsPath] || '';
+  const rel = (rels.match(/<Relationship\b[^>]*\/>/g) || []).find(r => /\/sharedStrings"/.test(r));
+  if (rel) return xlsxResolvePartPath('xl/', xlsxAttr(rel, 'Target'));
+  const path = 'xl/sharedStrings.xml';
+  let id = 1;
+  while (rels.indexOf('Id="rId' + id + '"') >= 0) id++;
+  files[relsPath] = rels.replace('</Relationships>',
+    '<Relationship Id="rId' + id + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>');
+  const ct = files['[Content_Types].xml'] || '';
+  if (ct.indexOf('/xl/sharedStrings.xml') < 0) {
+    files['[Content_Types].xml'] = ct.replace('</Types>',
+      '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>');
+  }
+  return path;
+}
+
+/* ======================================================================
+ * パッケージ変換（純粋関数）
+ * files: { 'xl/workbook.xml': '...', ... } … xlsx 内のテキストパート（xml / rels / vml）
+ * 戻り値: { files, removed, info }
+ * ====================================================================== */
+function xlsxTransformPackage(inFiles, p) {
+  const files = Object.assign({}, inFiles);
+  const removed = [];
+  const layout = Object.assign({ startRow: 6, rows: 0, nameCol: 1, dayStartCol: 4 }, p.layout || {});
+
+  const workbookXml = files['xl/workbook.xml'];
+  if (!workbookXml) throw new Error('テンプレに workbook.xml がありません（.xlsx 形式か確認してください）');
+  const sheetPath = xlsxResolveSheetPath(workbookXml, files['xl/_rels/workbook.xml.rels'] || '');
+  if (files[sheetPath] == null) throw new Error('テンプレ内にシートが見つかりません: ' + sheetPath);
+  const sheetTag = workbookXml.match(/<sheet\b[^>]*?\/?>/);
+  const selfName = sheetTag ? xlsxUnescape(xlsxAttr(sheetTag[0], 'name') || '') : null;
+  const ctx = { selfName };
+
+  const sstPath = xlsxEnsureSharedStringsPart(files);
+  const sst = createXlsxSharedStrings(files[sstPath] || null);
+  let stylesXml = files['xl/styles.xml'] || '';
+
+  // 共有数式を展開してから構造をいじる
+  let sheetXml = xlsxUnshareFormulas(files[sheetPath]);
+
+  // スタッフ欄の検出（設定で行数が指定されていればそれを優先）
+  const analysis = xlsxAnalyzeStaffBlock(sheetXml, stylesXml, sst.texts, layout);
+  const templateRows = layout.rows > 0 ? layout.rows : analysis.rows;
+  const n = p.orderedStaff.length;
+  const target = Math.max(1, n);
+  let added = 0, deleted = 0;
+
+  if (templateRows > 0 && target > templateRows) {
+    added = target - templateRows;
+    const at = layout.startRow + templateRows - 1; // スタッフ欄の最終行の位置に挿入 → 合計式の範囲も広がる
+    files[sheetPath] = sheetXml;
+    xlsxApplyRowOpToPackage(files, sheetPath, { type: 'insert', at, n: added }, ctx);
+    sheetXml = xlsxInsertRowsAndClone(files[sheetPath], at, added, ctx);
+  } else if (templateRows > 0 && target < templateRows) {
+    deleted = templateRows - target;
+    const op = { type: 'delete', from: layout.startRow + target, to: layout.startRow + templateRows - 1 };
+    files[sheetPath] = sheetXml;
+    xlsxApplyRowOpToPackage(files, sheetPath, op, ctx);
+    sheetXml = xlsxApplyRowOpToSheet(files[sheetPath], op, ctx);
+  }
+
+  // 書き込み内容
+  const specs = buildExcelCellSpecs(p.year, p.month, p.days, p.orderedStaff, p.groups, p.getShift, {
+    startRow: layout.startRow,
+    startDayCol: layout.dayStartCol + 1,
+    blockRows: templateRows > 0 ? target : n,
+    numbered: analysis.numbered,
+  });
+
+  // スタイル：前月の色（グループ色・赤字）を落としてから今月の色を載せる
+  const styler = createXlsxStyleEditor(stylesXml);
+  Object.keys(specs).forEach(ref => {
+    const sp = specs[ref];
+    if (!sp.cleanFill && !sp.fontRgb && !sp.fillRgb) return;
+    const orig = xlsxGetCellStyleIdx(sheetXml, ref);
+    let base = orig == null ? 0 : orig;
+    if (sp.cleanFill) base = styler.clean(base, { fill: true, font: !!sp.dayCell });
+    sp.styleIdx = (sp.fontRgb || sp.fillRgb) ? styler.variant(base, sp.fontRgb, sp.fillRgb) : (orig == null && base === 0 ? undefined : base);
+  });
+
+  const skipped = [];
+  sheetXml = xlsxSetCells(sheetXml, specs, { sst, skipped });
+
+  // シート内に残っているインライン文字列（古い出力やツール製テンプレ由来）も共有文字列へ寄せる
+  sheetXml = sheetXml.replace(XLSX_CELL_RE, (m, attrs, inner) => {
+    if (xlsxAttr(attrs, 't') !== 'inlineStr' || !inner) return m;
+    const is = inner.match(/<is>([\s\S]*?)<\/is>/);
+    if (!is) return m;
+    const plain = !/<r\b/.test(is[1]);
+    const idx = plain ? sst.add(xlsxSstText('<si>' + is[1] + '</si>')) : sst.addRaw(is[1]);
+    return '<c' + attrs.replace(/\bt="inlineStr"/, 't="s"') + '><v>' + idx + '</v></c>';
+  });
+  files[sheetPath] = sheetXml;
+  files['xl/styles.xml'] = styler.output();
+
+  // 計算チェーン削除＋再計算フラグ
+  xlsxDropCalcChain(files, removed);
+
+  // 共有文字列（参照数はブック全体の t="s" の数）
+  let refs = 0;
+  Object.keys(files).filter(k => /^xl\/worksheets\/[^/]+\.xml$/.test(k)).forEach(k => {
+    refs += (files[k].match(/<c\b[^>]*?\bt="s"/g) || []).length;
+  });
+  files[sstPath] = sst.output(refs);
+
+  return {
+    files,
+    removed,
+    info: {
+      sheetName: selfName,
+      startRow: layout.startRow,
+      detectedRows: analysis.rows,
+      templateRows,
+      filledInTemplate: analysis.filled,
+      staff: n,
+      added,
+      deleted,
+      numbered: analysis.numbered,
+      skippedFormulaCells: skipped,
+    },
+  };
+}
+
+/* シートXMLから既存セルのスタイルidxを取得（セル無し=null） */
+function xlsxGetCellStyleIdx(sheetXml, ref) {
+  const m = sheetXml.match(new RegExp('<c\\b[^>]*?\\br="' + ref + '"[^>]*?(?:\\/>|>)'));
+  if (!m) return null;
+  const s = xlsxAttr(m[0].replace(/\/?>$/, ''), 's');
+  return s == null ? 0 : parseInt(s, 10);
+}
+
+/* ---------- Excel出力のレイアウト設定（このブラウザに保存） ---------- */
+const EXCEL_LAYOUT_KEY = 'shift_excel_layout_v1';
+function getExcelLayout() {
+  let v = {};
+  try { v = JSON.parse(localStorage.getItem(EXCEL_LAYOUT_KEY) || '{}') || {}; } catch (e) { v = {}; }
+  const startRow = Math.max(1, Math.min(500, parseInt(v.startRow, 10) || 6));
+  const rows = Math.max(0, Math.min(300, parseInt(v.rows, 10) || 0));
+  return { startRow, rows };
+}
+function saveExcelLayout(layout) {
+  try { localStorage.setItem(EXCEL_LAYOUT_KEY, JSON.stringify(layout)); } catch (e) { console.error(e); }
+}
+
+/* xlsx（base64）からテキストパートを取り出す */
+async function xlsxLoadTextParts(base64) {
+  await ensureJSZip();
+  const zip = await JSZip.loadAsync(base64, { base64: true });
+  const files = {};
+  const names = Object.keys(zip.files).filter(n => !zip.files[n].dir && /\.(xml|rels|vml)$/i.test(n));
+  for (const n of names) files[n] = await zip.file(n).async('string');
+  return { zip, files };
+}
+
+/* 登録済みテンプレのスタッフ欄を解析（設定画面の表示用） */
+async function analyzeStoredTemplate() {
+  const b64 = await getStoredTemplate();
+  if (!b64) return null;
+  const { files } = await xlsxLoadTextParts(b64);
+  const wb = files['xl/workbook.xml'];
+  const sheetPath = xlsxResolveSheetPath(wb, files['xl/_rels/workbook.xml.rels'] || '');
+  const relsXml = files['xl/_rels/workbook.xml.rels'] || '';
+  const rel = (relsXml.match(/<Relationship\b[^>]*\/>/g) || []).find(r => /\/sharedStrings"/.test(r));
+  const sstXml = rel ? files[xlsxResolvePartPath('xl/', xlsxAttr(rel, 'Target'))] : null;
+  const sst = createXlsxSharedStrings(sstXml || null);
+  const layout = Object.assign({ nameCol: 1, dayStartCol: 4 }, getExcelLayout());
+  const a = xlsxAnalyzeStaffBlock(xlsxUnshareFormulas(files[sheetPath] || ''), files['xl/styles.xml'] || '', sst.texts, layout);
+  return a;
 }
 
 async function generateExcelFromTemplate(base64) {
   try {
-    await ensureJSZip();
-    const zip = await JSZip.loadAsync(base64, { base64: true });
-
-    const workbookXml = await zip.file('xl/workbook.xml').async('string');
-    const relsFile = zip.file('xl/_rels/workbook.xml.rels');
-    const relsXml = relsFile ? await relsFile.async('string') : '';
-    const sheetPath = xlsxResolveSheetPath(workbookXml, relsXml);
-    const sheetFile = zip.file(sheetPath);
-    if (!sheetFile) throw new Error('テンプレ内にシートが見つかりません: ' + sheetPath);
-    let sheetXml = await sheetFile.async('string');
-    let stylesXml = await zip.file('xl/styles.xml').async('string');
+    const { zip, files } = await xlsxLoadTextParts(base64);
 
     const ym = state.currentMonth;
     const { year, month } = parseMonth(ym);
@@ -4144,47 +5048,17 @@ async function generateExcelFromTemplate(base64) {
       state.staff.filter(s => s.category === cat).forEach(s => orderedStaff.push(s));
     });
 
-    /* ★テンプレの人数とアプリの人数の差を吸収する
-     * テンプレのスタッフ行ブロック数を検出し、足りない分は
-     * 「ブロック最終行のスタイルを複製した行」を挿入して全員分出力する。
-     * 下にある行（合計・凡例など）と結合セルは同じだけ下へずらす。 */
-    const START_ROW = 6;
-    const START_DAY_COL = 5;
-    const detected = xlsxDetectStaffBlockRows(sheetXml, START_ROW, 'B');
-    const templateRows = detected > 0 ? detected : 20; // 検出できない場合は従来どおり20行想定
-    let addedRows = 0;
-    if (orderedStaff.length > templateRows) {
-      addedRows = orderedStaff.length - templateRows;
-      const protoRow = START_ROW + templateRows - 1;   // ブロック最終行＝雛形
-      const shiftFrom = START_ROW + templateRows;      // ここから下を押し下げ
-      sheetXml = xlsxShiftRowsDown(sheetXml, shiftFrom, addedRows);
-      sheetXml = xlsxShiftRefsDown(sheetXml, shiftFrom, addedRows);
-      const newRows = [];
-      for (let i = 1; i <= addedRows; i++) newRows.push(protoRow + i);
-      sheetXml = xlsxCloneRowsFrom(sheetXml, protoRow, newRows);
-    }
-
-    const specs = buildExcelCellSpecs(year, month, days, orderedStaff, state.groups, getShift, {
-      startRow: START_ROW,
-      startDayCol: START_DAY_COL,
-      blockRows: templateRows,
+    const res = xlsxTransformPackage(files, {
+      year, month, days, orderedStaff,
+      groups: state.groups,
+      getShift,
+      layout: getExcelLayout(),
     });
 
-    // 色指定のあるセルは「元スタイルの複製＋色差し替え」でスタイルidxを解決
-    const styler = createXlsxStyleEditor(stylesXml);
-    Object.keys(specs).forEach(ref => {
-      const sp = specs[ref];
-      if (sp.fontRgb || sp.fillRgb) {
-        const orig = xlsxGetCellStyleIdx(sheetXml, ref);
-        sp.styleIdx = styler.variant(orig == null ? 0 : orig, sp.fontRgb, sp.fillRgb);
-      }
+    res.removed.forEach(p => zip.remove(p));
+    Object.keys(res.files).forEach(p => {
+      if (res.files[p] !== files[p]) zip.file(p, res.files[p]);
     });
-
-    sheetXml = xlsxSetCells(sheetXml, specs);
-    stylesXml = styler.output();
-
-    zip.file(sheetPath, sheetXml);
-    zip.file('xl/styles.xml', stylesXml);
 
     const blob = await zip.generateAsync({
       type: 'blob',
@@ -4198,14 +5072,26 @@ async function generateExcelFromTemplate(base64) {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 
-    showToast(addedRows > 0
-      ? `Excelを出力しました（テンプレ${templateRows}人分 → ${addedRows}行追加して${orderedStaff.length}人全員を出力）`
-      : 'Excelを出力しました（テンプレ書式を完全保持）', addedRows > 0 ? 5000 : 2200);
+    const info = res.info;
+    let msg;
+    if (info.templateRows === 0) {
+      msg = 'Excelを出力しましたが、スタッフ欄を自動検出できませんでした。設定 →「Excel出力のスタッフ欄」で開始行・行数を指定してください';
+    } else if (info.added > 0) {
+      msg = `Excelを出力しました（テンプレ${info.templateRows}行 → ${info.staff}人分：${info.added}行追加）`;
+    } else if (info.deleted > 0) {
+      msg = `Excelを出力しました（テンプレ${info.templateRows}行 → ${info.staff}人分：${info.deleted}行削除）`;
+    } else {
+      msg = `Excelを出力しました（${info.staff}人・テンプレ書式を保持）`;
+    }
+    if (info.skippedFormulaCells.length > 0) {
+      msg += `／数式セル${info.skippedFormulaCells.length}個は上書きせず保持`;
+    }
+    showToast(msg, info.templateRows === 0 || info.added || info.deleted || info.skippedFormulaCells.length ? 6000 : 2500);
   } catch (e) {
     console.error(e);
-    showToast('Excel出力エラー: ' + e.message);
+    showToast('Excel出力エラー: ' + e.message, 6000);
   }
 }
 
@@ -4303,6 +5189,19 @@ async function openSettingsModal() {
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-secondary" id="st-tpl-replace">${hasTemplate ? '再登録' : '登録'}</button>
         ${hasTemplate ? '<button class="btn btn-secondary" id="st-tpl-delete">削除</button>' : ''}
+      </div>
+      <div style="font-size:12px;font-weight:700;color:#374151;margin:14px 0 6px;">Excel出力のスタッフ欄</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:#374151;">
+        <label>開始行 <input type="number" class="form-input" id="st-xl-start" min="1" max="500" value="${getExcelLayout().startRow}" style="width:70px;display:inline-block;"></label>
+        <label>行数 <input type="number" class="form-input" id="st-xl-rows" min="0" max="300" value="${getExcelLayout().rows}" style="width:70px;display:inline-block;"></label>
+        <span style="color:#9CA3AF;">0＝自動検出</span>
+      </div>
+      <div id="st-xl-detect" style="font-size:11px;color:#6B7280;margin-top:6px;line-height:1.6;">
+        ${hasTemplate ? 'テンプレを解析中…' : 'テンプレ登録後に自動検出の結果が表示されます'}
+      </div>
+      <div style="font-size:11px;color:#9CA3AF;margin-top:4px;line-height:1.6;">
+        人数がテンプレの行数より多いと行を追加、少ないと余った行を削除します。合計などの数式の範囲・結合セル・印刷範囲も一緒に調整されます。<br>
+        数式が入っているセルには書き込みません。
       </div>
     </div>
 
@@ -4495,6 +5394,41 @@ async function openSettingsModal() {
     });
   });
 
+  // Excel出力のスタッフ欄
+  const xlStart = document.getElementById('st-xl-start');
+  const xlRows = document.getElementById('st-xl-rows');
+  const refreshDetect = async () => {
+    const box = document.getElementById('st-xl-detect');
+    if (!box || !hasTemplate) return;
+    try {
+      const a = await analyzeStoredTemplate();
+      if (!document.getElementById('st-xl-detect')) return; // モーダルが閉じられた
+      if (!a || a.rows === 0) {
+        box.innerHTML = `<span style="color:#DC2626;font-weight:700;">⚠ ${a ? a.startRow : ''}行目からスタッフ欄を検出できませんでした。</span>開始行・行数を指定してください。`;
+      } else {
+        const lay = getExcelLayout();
+        const used = lay.rows > 0 ? `（行数指定 ${lay.rows}行を使用）` : '';
+        box.innerHTML = `自動検出：<strong>${a.startRow}行目〜${a.startRow + a.rows - 1}行目（${a.rows}行）</strong>`
+          + `　テンプレに名前が入っている行 ${a.filled}行${a.numbered ? '・A列の番号は振り直し' : ''}${used}`
+          + `<br>今のスタッフ ${state.staff.length}人 → 出力時に${state.staff.length > a.rows ? (state.staff.length - a.rows) + '行追加' : state.staff.length < a.rows ? (a.rows - Math.max(1, state.staff.length)) + '行削除' : '行数そのまま'}`;
+      }
+    } catch (e) {
+      console.error(e);
+      box.textContent = 'テンプレの解析に失敗しました: ' + e.message;
+    }
+  };
+  const onLayoutChange = () => {
+    const startRow = Math.max(1, Math.min(500, parseInt(xlStart.value, 10) || 6));
+    const rows = Math.max(0, Math.min(300, parseInt(xlRows.value, 10) || 0));
+    xlStart.value = startRow;
+    xlRows.value = rows;
+    saveExcelLayout({ startRow, rows });
+    refreshDetect();
+  };
+  xlStart.addEventListener('change', onLayoutChange);
+  xlRows.addEventListener('change', onLayoutChange);
+  refreshDetect();
+
   // テンプレ
   document.getElementById('st-tpl-replace').addEventListener('click', () => {
     closeModal();
@@ -4516,13 +5450,16 @@ async function openSettingsModal() {
     const ym = state.currentMonth;
     confirmDialog(`${parseMonth(ym).year}年${parseMonth(ym).month}月のシフト・必要人数をクリアしますか？`, () => {
       const days = daysInMonth(ym);
+      const keepMemo = state.months[ym] ? state.months[ym].dayMemo : null; // メモは消さない
       state.months[ym] = {
         requiredStaff: new Array(days).fill(0),
         requiredEmployee: new Array(days).fill(0),
         paidLeaves: {},
         shifts: {},
+        dayMemo: keepMemo,
         generated: false,
       };
+      ensureDayMemo(state.months[ym], ym);
       saveState();
       renderAll();
       showToast('クリアしました');
@@ -4617,41 +5554,8 @@ function applyBulkRequired(scope) {
   checkAndRenderViolations();
 }
 
-/* ===== メモゾーン（月ごと・Excel出力対象外） ===== */
+/* 日別メモの保存タイマー（入力連打で localStorage を叩きすぎないよう少し待つ） */
 let memoSaveTimer = null;
-
-function renderMemo() {
-  const md = state.months[state.currentMonth];
-  if (!md) return;
-  if (!Array.isArray(md.memo)) md.memo = ['', ''];
-  for (let i = 0; i < 2; i++) {
-    const el = document.getElementById('memo-' + i);
-    if (!el) continue;
-    if (document.activeElement === el) continue; // 入力中は上書きしない
-    el.value = md.memo[i] || '';
-  }
-}
-
-function bindMemoEvents() {
-  for (let i = 0; i < 2; i++) {
-    const el = document.getElementById('memo-' + i);
-    if (!el || el._memoBound) continue;
-    el._memoBound = true;
-    el.addEventListener('input', () => {
-      const md = state.months[state.currentMonth];
-      if (!md) return;
-      if (!Array.isArray(md.memo)) md.memo = ['', ''];
-      md.memo[i] = el.value;
-      // 連打で localStorage を叩きすぎないよう少し待ってから保存
-      clearTimeout(memoSaveTimer);
-      memoSaveTimer = setTimeout(() => saveState(), 400);
-    });
-    el.addEventListener('blur', () => {
-      clearTimeout(memoSaveTimer);
-      saveState();
-    });
-  }
-}
 
 /* ===== 全描画 ===== */
 function renderAll() {
@@ -4659,7 +5563,6 @@ function renderAll() {
     `${parseMonth(state.currentMonth).year}年${parseMonth(state.currentMonth).month}月`;
   renderSidebar();
   renderLegend();
-  renderMemo();
   renderCalendar();
   checkAndRenderViolations();
   updateModeBar();
@@ -4747,9 +5650,6 @@ async function init() {
       }
     );
   });
-
-  // メモ欄
-  bindMemoEvents();
 
   // サイドバー追加ボタン
   document.getElementById('btn-add-staff').addEventListener('click', () => openStaffModal(null));
